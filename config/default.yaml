@@ -1,0 +1,56 @@
+# 맵 설정
+map:
+  width: 10
+  height: 10
+  wall_count: 8
+  wall_placement: "random"
+
+# 에이전트 설정
+agent:
+  count: 2
+  initial_hp: 100
+  initial_attack: 10
+  initial_defense: 0
+  view_range: 5
+
+# 아이템 설정 (Phase 2)
+items:
+  enabled: false
+  potion_heal: 30
+  weapon_attack_bonus: 10
+  armor_defense_bonus: 10
+  respawn_interval: 20
+  max_potions_on_map: 3
+  max_weapons_on_map: 2
+  max_armors_on_map: 2
+
+# 자기장 설정 (Phase 2)
+zone:
+  enabled: false
+  shrink_start_step: 100
+  shrink_interval: 30
+  damage_per_step: 5
+
+# 게임 규칙
+game:
+  max_steps: 500
+  simultaneous_actions: true
+
+# 보상 설정
+reward:
+  kill: 10.0
+  death: -10.0
+  damage_dealt: 1.0
+  item_pickup: 2.0
+  potion_use: 1.0
+  zone_damage: -1.0
+  survival_per_step: 0.01
+  idle_penalty: -0.05
+
+# 학습 설정
+training:
+  algorithm: "DQN"
+  total_timesteps: 500000
+  learning_rate: 0.0001
+  self_play: true
+  opponent_update_interval: 10000

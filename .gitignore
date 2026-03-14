@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+
+# Models (large binary files)
+models/
+*.zip
+
+# Logs & TensorBoard
+logs/
+
+# Assets (images, sounds)
+rendering/assets/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Testing / Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Claude
+.claude/
+CLAUDE.md
+PROJECT_PLAN.md
+TRAINING_GUIDE.md
+docs/

@@ -1,0 +1,60 @@
+# Phase 2 설정 - 15x15 맵, 아이템, 자기장 활성화
+
+map:
+  width: 15
+  height: 15
+  wall_count: 15
+  wall_placement: "random"
+
+agent:
+  count: 2
+  initial_hp: 100
+  initial_attack: 10
+  initial_defense: 0
+  view_range: 7
+
+items:
+  enabled: true
+  potion_heal: 30
+  weapon_attack_bonus: 10
+  armor_defense_bonus: 10
+  respawn_interval: 20
+  max_potions_on_map: 3
+  max_weapons_on_map: 2
+  max_armors_on_map: 2
+
+zone:
+  enabled: true
+  shrink_start_step: 50
+  shrink_interval: 30
+  damage_per_step: 8
+
+game:
+  max_steps: 500
+  simultaneous_actions: true
+
+reward:
+  kill: 15.0
+  death: -10.0
+  damage_dealt: 2.0
+  item_pickup: 2.0
+  potion_use: 1.0
+  zone_damage: -2.0
+  survival_per_step: 0.05
+  idle_penalty: -0.2
+  wall_bump: -0.1
+  approach_enemy: 0.1
+  no_combat_penalty: -0.1
+  no_combat_threshold: 30
+  combo_bonus: 0.5
+  attack_miss: -1.0
+  oscillation_penalty: -0.15
+  flee_hp_threshold: 0.3
+  flee_bonus: 0.2
+
+training:
+  algorithm: "PPO"
+  total_timesteps: 700000
+  learning_rate: 0.0003
+  self_play: true
+  opponent_update_interval: 10000
