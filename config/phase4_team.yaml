@@ -25,14 +25,14 @@ roles:
     attack: 12
     defense: 5
     attack_range: 1
-    attack_cooldown_steps: 1  # 근접 공격 후 1스텝 쿨다운
+    attack_cooldown_steps: 1 # 근접 공격 후 1스텝 쿨다운
   dealer:
     hp: 70
     attack: 15
     defense: 0
     attack_range: 3
     ranged_damage_multiplier: 0.8
-    attack_cooldown_steps: 2  # 원거리 공격 후 2스텝 쿨다운
+    attack_cooldown_steps: 2 # 원거리 공격 후 2스텝 쿨다운
   healer:
     hp: 100
     attack: 6
@@ -55,10 +55,10 @@ items:
 
 zone:
   enabled: true
-  shrink_start_step: 60
-  shrink_interval: 30
+  shrink_start_step: 40 # 60→40 압박 조기 시작
+  shrink_interval: 20 # 30→20 더 자주 축소
   damage_per_step: 10
-  min_safe_radius: 4 # 안전지대 최소 반경 (8×8 중앙 영역 항상 보장)
+  min_safe_radius: 2 # 3→2 최종 4×4까지 축소 (6명이 16칸, 회피 불가)
 
 game:
   max_steps: 400 # 600→400 게임 길이 단축
@@ -66,40 +66,40 @@ game:
 
 reward:
   # 이벤트 보상 (v2: 전투↓ 생존↑ 밸런스 조정)
-  kill: 8.0 # 10→8 전투 지배력 완화
-  death: -8.0
-  damage_dealt: 1.0 # 2→1 가장 큰 전투 보상 반감
+  kill: 10.0 # 8→10 전투 당근 강화
+  death: -10.0 # -8→-10 무모한 돌진 억제 (kill과 대칭)
+  damage_dealt: 1.5 # 1.0→1.5 때리면 확실히 이득
   item_pickup: 2.0 # 3→2 아이템 보상 하향 (파밍 지배력 완화)
   low_hp_potion_bonus: 3.0 # 4→3 저체력 포션 보상 소폭 하향
   low_hp_potion_threshold: 0.5
   zone_damage: -4.0
-  survival_per_step: 0.03 # 0.01→0.03 생존 보상 3배
+  survival_per_step: 0.02 # 0.03→0.02 비전투 수익 축소
   # 행동 보상
-  approach_enemy: 0.1
+  approach_enemy: 0.3 # 0.1→0.3 접근 자체에 보상 (조우 유도)
   flee_hp_threshold: 0.3
-  flee_bonus: 0.1
-  disengage_bonus: 0.2
+  flee_bonus: 0.2 # 0.1→0.2 저체력 후퇴 보상 강화
+  disengage_bonus: 0.3 # 0.2→0.3 교전 후 빠지기 보상 강화
   disengage_hp_threshold: 0.4
   disengage_lookback: 5
-  combo_bonus: 0.3 # 0.5→0.3 콤보 보상 하향
+  combo_bonus: 0.5 # 0.3→0.5 연속 공격 보상 강화
   # 페널티
   idle_penalty: -0.05
   wall_bump: -0.1
-  attack_miss: -0.3
+  attack_miss: -0.2 # -0.15→-0.2 공격 스팸 억제 (명중률 낮으면 손해)
   oscillation_penalty: -0.05
-  no_combat_penalty: -0.3
-  no_combat_threshold: 20
+  no_combat_penalty: -0.1
+  no_combat_threshold: 30
   invalid_action: -0.1
   ranged_miss: -0.2
   # 팀 보상
-  team_win: 15.0
+  team_win: 20.0
   team_eliminated: -8.0
   teammate_death: -3.0
   heal_ally: 1.5
   heal_low_hp_ally: 3.0
   heal_hp_threshold: 0.4
   # 종료 보상
-  team_ranking_rewards: [15, 3, -8] # 1등팀, 2등팀, 3등팀
+  team_ranking_rewards: [20, 3, -10] # 1등팀, 2등팀, 3등팀
   kill_streak_2: 1.0
   kill_streak_3: 2.0
   wasted_advantage_penalty: -3.0
@@ -108,28 +108,36 @@ reward:
 # 역할별 보상 오버라이드 (base reward 위에 덮어씀)
 role_rewards:
   tank:
-    approach_enemy: 0.3 # 0.2→0.3 접근 시 순보상 양수화 (no_combat 상쇄)
-    no_combat_penalty: -0.15 # -0.3→-0.15 매스텝 누적이므로 반감해도 충분
-    no_combat_threshold: 40 # 20→40 근접 역할 맵 이동 시간 확보
+    approach_enemy: 0.6 # 0.5→0.6 적 접근 더 강화
+    attack_miss: -0.3 # -0.25→-0.3 스팸 억제 더 강화
+    damage_dealt: 2.0 # base 1.5→2.0 근접 명중 시 큰 보상
+    combo_bonus: 0.8 # base 0.5→0.8 연속 공격 보상
+    kill: 12.0 # base 10→12 탱커는 킬 역할
+    no_combat_penalty: -0.05 # -0.15→-0.05 no_combat 지배력 완화
+    no_combat_threshold: 50 # 40→50 근접 역할 맵 이동 시간 충분 확보
     idle_penalty: -0.05 # -0.08→-0.05 no_combat과 이중 페널티 해소
 
   dealer:
-    approach_enemy: 0.1 # 기본값 유지
-    no_combat_penalty: -0.2 # 유지
-    no_combat_threshold: 35 # 25→35 교전 사이 이동 시간 여유
-    ranged_miss: -0.05 # -0.2→-0.05 원거리 시도 억제 완화 (빗나감 페널티 과다)
-    attack_miss: -0.15 # base -0.3→-0.15 근접 미스 과다 페널티 완화
+    approach_enemy: 0.35 # 0.2→0.35 라인 맞추기 이동 강화 (명중률 44% → 접근 유도 핵심)
+    no_combat_penalty: -0.04 # -0.08→-0.04 포지셔닝 이동 시간에 페널티 과다 (no_combat -2.16 누적)
+    no_combat_threshold: 55 # 45→55 사거리 맞추려면 이동 시간 더 필요
+    ranged_miss: -0.05 # -0.1→-0.05 miss 11.6회/ep → 시도 자체를 억제하면 안 됨
+    attack_miss: -0.15 # -0.2→-0.15 근접 miss도 약간 완화
+    combo_bonus: 0.8 # 0.7→0.8 연속 명중 보상 강화
+    damage_dealt: 2.2 # 1.8→2.2 명중 보상 대폭 강화 (쿨다운 2스텝 감안, 히트 9회/ep)
+    item_pickup: 1.0 # base 2.0→1.0 파밍 비중 축소 (item +4.46이 damage 대비 과다)
 
   healer:
-    # 힐러 = 팀 케어 특화 (v2: 생존+힐+팀원 접근 대폭 강화)
+    # 힐러 = 팀 케어 특화 (v3: 상황별 전투 행동 유도)
     death: -12.0 # -8→-12 힐러 사망 강력 페널티
-    damage_dealt: 0.5 # 1.0→0.5 전투보다 힐 유도
-    no_combat_penalty: -0.02 # -0.05→-0.02 힐러는 싸울 필요 없음
-    no_combat_threshold: 80 # 50→80 비전투 허용 대폭 확대
+    damage_dealt: 0.8 # 0.5→0.8 공격 보상 소폭 증가 (힐 7.0 대비 ~9:1 유지)
+    item_pickup: 0.5 # 2.0→0.5 아이템 파밍 편향 억제
+    no_combat_penalty: -0.03 # -0.02→-0.03 무전투 패널티 소폭 강화
+    no_combat_threshold: 60 # 80→60 무전투 허용 시간 축소
     idle_penalty: -0.01
-    attack_miss: -0.02 # -0.05→-0.02 공격 자체를 덜 페널티
-    # 적 접근 제거, 팀원 접근 강화
-    approach_enemy: 0.0
+    attack_miss: -0.05 # -0.1→-0.05 공격 시도 패널티 완화
+    # 적 접근 최소 인센티브, 팀원 접근 강화
+    approach_enemy: 0.1 # 0.0→0.1 적 접근에 최소한의 인센티브
     approach_teammate: 0.4 # 0.2→0.4 팀원 찾아가기 핵심 보상
     # 힐 보상: 체력 낮은 팀원 힐만 보상, 풀피 힐 억제
     heal_ally: -0.5 # 3.5→-0.5 체력 높은 팀원 힐은 소폭 페널티 (풀피 힐 억제)
@@ -144,15 +152,4 @@ training:
   algorithm: 'PPO'
   multi_policy: true
   # 멀티 정책: 라운드 로빈 설정
-  num_rounds: 7 # 이전 학습 3라운드 완료 → 나머지 7라운드
-  steps_per_round: 300000 # 한 역할당 라운드당 스텝 → 역할당 총 2.1M 추가
-  # 공통 하이퍼파라미터
-  total_timesteps: 3000000 # 단일 정책 호환용
-  learning_rate: 0.0001
-  n_envs: 8
-  self_play: true
-  opponent_update_interval: 25000
-  net_arch: [256, 256]
-  gamma: 0.995
-  n_steps: 4096
-  ent_coef: 0.02 # 0.015→0.02 Tank/Dealer 조기 수렴 방지
+  num_rounds: 10 # 5→10 라운드 로빈으로 더 다양한 상대와 교전
