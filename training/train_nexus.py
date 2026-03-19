@@ -3,11 +3,12 @@
 import argparse
 import os
 import sys
+import time
 
 import yaml
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,8 +32,14 @@ def make_env_fn(config: dict, learning_role: str):
 
 
 def make_env(config: dict, n_envs: int, learning_role: str):
-    """역할별 벡터화 환경 생성."""
+    """역할별 벡터화 환경 생성.
+
+    n_envs > 1 이면 SubprocVecEnv로 멀티프로세스 병렬 실행,
+    n_envs == 1 이면 DummyVecEnv로 단일 프로세스 실행.
+    """
     env_fns = [make_env_fn(config, learning_role) for _ in range(n_envs)]
+    if n_envs > 1:
+        return SubprocVecEnv(env_fns)
     return DummyVecEnv(env_fns)
 
 
@@ -60,7 +67,8 @@ def create_model(role: str, env, config: dict, log_dir: str) -> PPO:
         batch_size=64,
         gamma=gamma,
         ent_coef=ent_coef,
-        verbose=1,
+        # 내부 SB3 로그 출력은 최소화하고, 커스텀 콜백 로그만 보이도록 설정
+        verbose=0,
         tensorboard_log=role_log_dir,
         policy_kwargs=policy_kwargs if policy_kwargs else {},
     )
@@ -86,8 +94,9 @@ def train_nexus(args):
     steps_per_round = training_cfg.get("steps_per_round", 300000)
     opponent_update_interval = training_cfg.get("opponent_update_interval", 25000)
 
-    snapshot_dir = os.path.join("models", "nexus_multi_policy")
-    log_dir = os.path.join("logs", "tensorboard", "nexus_multi_policy")
+    # 새 학습 결과는 nexus_multi_policy_new 아래에 저장
+    snapshot_dir = os.path.join("models", "nexus_multi_policy_new")
+    log_dir = os.path.join("logs", "tensorboard", "nexus_multi_policy_new")
     os.makedirs(snapshot_dir, exist_ok=True)
 
     roles = [ROLE_TANK, ROLE_DEALER, ROLE_HEALER]
@@ -112,6 +121,7 @@ def train_nexus(args):
     # 모델 딕셔너리 (라운드 간 유지)
     models: dict[str, PPO] = {}
 
+    total_start = time.perf_counter()
     for round_idx in range(num_rounds):
         # ── 라운드 시작마다 config 재로드 ──────────────────────────────
         config = load_config(args.config)
@@ -155,13 +165,14 @@ def train_nexus(args):
             set_initial_opponents(env, snapshot_dir)
 
             # 콜백
+            round_callback = NexusBattleCallback(
+                save_dir=os.path.join(role_dir, "checkpoints"),
+                save_freq=50000,
+                verbose=1,
+                role=role,
+            )
             callbacks = [
-                NexusBattleCallback(
-                    save_dir=os.path.join(role_dir, "checkpoints"),
-                    save_freq=50000,
-                    verbose=1,
-                    role=role,
-                ),
+                round_callback,
                 MultiPolicySelfPlayCallback(
                     learning_role=role,
                     snapshot_dir=snapshot_dir,
@@ -181,6 +192,18 @@ def train_nexus(args):
             except Exception as e:
                 print(f"\n[WARNING] {role.upper()} 학습 중 예외 발생: {e}")
                 print("  현재까지 학습된 모델을 저장하고 다음 역할로 진행합니다.")
+
+            # 라운드/역할별 간단 요약 출력
+            if round_callback.episode_count > 0:
+                recent_rewards = round_callback.episode_rewards[-min(100, len(round_callback.episode_rewards)):]
+                recent_lengths = round_callback.episode_lengths[-min(100, len(round_callback.episode_lengths)):]
+                avg_r = sum(recent_rewards) / len(recent_rewards)
+                avg_len = sum(recent_lengths) / len(recent_lengths)
+                win_rate = (round_callback.win_count / round_callback.episode_count
+                            if round_callback.episode_count > 0 else 0.0)
+                print(f"  [{role.upper()}] Round {round_idx + 1} summary "
+                      f"(episodes={round_callback.episode_count}): "
+                      f"avgR={avg_r:.2f}, winRate={win_rate:.2%}, avgLen={avg_len:.0f}")
 
             # 스냅샷 저장 (예외 발생 시에도 반드시 저장)
             model.save(os.path.join(role_dir, f"{role}_snapshot"))
@@ -204,6 +227,9 @@ def train_nexus(args):
         final_path = os.path.join(snapshot_dir, role, f"{role}_final")
         models[role].save(final_path)
         print(f"  {role}: {final_path}")
+
+    total_elapsed = time.perf_counter() - total_start
+    print(f"\n=== Total Training Time: {total_elapsed:.1f}s ===")
 
 
 def main():

@@ -153,14 +153,3 @@ training:
   multi_policy: true
   # 멀티 정책: 라운드 로빈 설정
   num_rounds: 10 # 5→10 라운드 로빈으로 더 다양한 상대와 교전
-  steps_per_round: 300000 # 한 역할당 라운드당 스텝 → 역할당 총 2.1M 추가
-  # 공통 하이퍼파라미터
-  total_timesteps: 3000000 # 단일 정책 호환용
-  learning_rate: 0.0001
-  n_envs: 8
-  self_play: true
-  opponent_update_interval: 25000
-  net_arch: [256, 256]
-  gamma: 0.995
-  n_steps: 4096
-  ent_coef: 0.02 # 0.015→0.02 Tank/Dealer 조기 수렴 방지

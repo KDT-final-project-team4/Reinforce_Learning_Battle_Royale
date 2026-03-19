@@ -46,21 +46,17 @@ class MinionAI:
         """
         my, mx = minion.y, minion.x
 
+        # 감지 범위 내 가장 가까운 적 에이전트 (있기만 하면 넥서스보다 항상 우선)
+        closest_enemy = self._find_closest_enemy_in_range(
+            my, mx, minion.team_id, agents, self.detection_range
+        )
+
         # 1. 인접 4방향에 적 에이전트가 있으면 공격
         adj_enemy = self._find_adjacent_enemy_agent(my, mx, minion.team_id, agents)
         if adj_enemy is not None:
             return ("attack_agent", adj_enemy)
 
-        # 2. 인접 4방향에 적 넥서스가 있으면 공격
-        if enemy_nexus.alive:
-            dist_to_nexus = abs(my - enemy_nexus.y) + abs(mx - enemy_nexus.x)
-            if dist_to_nexus == 1:
-                return ("attack_nexus",)
-
-        # 3. 감지 범위 내 가장 가까운 적 에이전트 쪽으로 이동
-        closest_enemy = self._find_closest_enemy_in_range(
-            my, mx, minion.team_id, agents, self.detection_range
-        )
+        # 2. 감지 범위 안에 적 에이전트가 있으면 그쪽으로 이동
         if closest_enemy is not None:
             step = self._bfs_next_step(
                 grid, my, mx, closest_enemy.y, closest_enemy.x,
@@ -69,8 +65,12 @@ class MinionAI:
             if step is not None:
                 return ("move", step[0] - my, step[1] - mx)
 
-        # 4. 적 넥서스 쪽으로 이동
+        # 3. 적 에이전트가 시야에 전혀 없을 때만 넥서스를 대상으로 공격/이동
         if enemy_nexus.alive:
+            dist_to_nexus = abs(my - enemy_nexus.y) + abs(mx - enemy_nexus.x)
+            if dist_to_nexus == 1:
+                return ("attack_nexus",)
+
             step = self._bfs_next_step(
                 grid, my, mx, enemy_nexus.y, enemy_nexus.x,
                 agents, minions, minion.minion_id
