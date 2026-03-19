@@ -23,7 +23,7 @@ REWARD_KEYS = [
 NEXUS_REWARD_KEYS = [
     "kill", "death", "damage_dealt", "item_pickup",
     "survival", "idle", "wall_bump", "attack_miss",
-    "combo", "no_combat", "approach", "oscillation",
+    "combo", "no_combat", "approach", "flee", "oscillation",
     "heal_ally", "ranged_miss", "invalid_action",
     "teammate_death", "approach_teammate",
     "attack_cooldown", "heal_cooldown",

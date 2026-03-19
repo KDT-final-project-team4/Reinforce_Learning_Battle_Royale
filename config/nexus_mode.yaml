@@ -120,6 +120,8 @@ reward:
   ranged_miss: -0.1
   invalid_action: -0.1
   oscillation_penalty: -0.05
+  flee_hp_threshold: 0.35     # HP 비율이 이 값보다 낮으면 도주 보상 활성화
+  flee_bonus: 0.6             # 저체력 상태에서 적과 거리 1 증가당 보상
   no_combat_penalty: -2.5
   no_combat_threshold: 45 # 무전투 시 패널티에 대한 임계값 (짧은 거리벌리기 허용)
   survival_per_step: 0.03 # 살아남는 것에 소량 보상 (생존 우선도 약간 증가)
@@ -138,6 +140,7 @@ role_rewards:
     defend_nexus_bonus: 0.0
     damage_dealt: 0.4
     combo_bonus: 0.0
+    flee_bonus: 0.8
     approach_enemy_nexus: 0.6
     approach_enemy: 0.3
     no_combat_penalty: -8.0
@@ -148,6 +151,7 @@ role_rewards:
     approach_enemy: 0.4
     damage_dealt: 0.5
     combo_bonus: 0.0
+    flee_bonus: 1.0
     ranged_miss: -0.07
     attack_miss: -0.18
   healer:

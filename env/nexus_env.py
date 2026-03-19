@@ -945,6 +945,17 @@ class NexusBattleEnv(BaseBattleEnv):
                     reward += r
                     rd["approach"] = r
 
+            # 저체력 도주 보너스: 체력이 낮을 때 적과의 거리를 벌리면 보상
+            flee_hp_threshold = cfg.get("flee_hp_threshold", 0.0)
+            flee_bonus = cfg.get("flee_bonus", 0.0)
+            if flee_bonus != 0.0 and (agent.hp / agent.max_hp) < flee_hp_threshold:
+                if prev_dist != float("inf") and curr_dist != float("inf"):
+                    dist_change = curr_dist - prev_dist
+                    if dist_change > 0:
+                        r = flee_bonus * dist_change
+                        reward += r
+                        rd["flee"] = rd.get("flee", 0.0) + r
+
             # 적 넥서스 접근 보상
             approach_nexus = cfg.get("approach_enemy_nexus", 0.05)
             if approach_nexus != 0.0:
