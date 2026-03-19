@@ -43,8 +43,8 @@ TEST_CONFIG = {
                  "learning_rate": 0.0001, "self_play": False},
 }
 
-# Phase 4 obs size: 5*5*4 + 7 + 4 + 4 + 5 + 3 = 123
-PHASE4_OBS_SIZE = 5 * 5 * 4 + 7 + 4 + 4 + 5 + 3
+# Phase 4 obs size: 5*5*4 + 7 + 5 + 5 + 5 + 3 = 123
+PHASE4_OBS_SIZE = 5 * 5 * 4 + 7 + 5 + 5 + 5 + 3
 
 
 class TestMapGenerator(unittest.TestCase):
@@ -221,8 +221,8 @@ PHASE2_CONFIG = {
                  "learning_rate": 0.0003, "self_play": False},
 }
 
-# Phase 2 obs size: 7*7*4 + 7 + 4 + 4 + 5 + 3 = 219
-PHASE2_OBS_SIZE = 7 * 7 * 4 + 7 + 4 + 4 + 5 + 3
+# Phase 2 obs size: 7*7*4 + 7 + 5 + 5 + 5 + 3 = 219
+PHASE2_OBS_SIZE = 7 * 7 * 4 + 7 + 5 + 5 + 5 + 3
 
 
 class TestPhase2(unittest.TestCase):
@@ -370,8 +370,8 @@ PHASE4_CONFIG = {
                  "learning_rate": 0.0001, "self_play": False},
 }
 
-# Phase 4 obs size with view_range=9: 9*9*4 + 7 + 4 + 4 + 5 + 3 = 347
-PHASE4_FULL_OBS_SIZE = 9 * 9 * 4 + 7 + 4 + 4 + 5 + 3
+# Phase 4 obs size with view_range=9: 9*9*4 + 7 + 5 + 5 + 5 + 3 = 347
+PHASE4_FULL_OBS_SIZE = 9 * 9 * 4 + 7 + 5 + 5 + 5 + 3
 
 
 class TestPhase4(unittest.TestCase):

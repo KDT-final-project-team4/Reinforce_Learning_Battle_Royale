@@ -44,11 +44,11 @@ class BattleRoyaleEnv(BaseBattleEnv):
         # 자기 스탯: 7 (hp, atk, def, is_tank, is_dealer, is_healer, range_norm)
         self_stats = 7
 
-        # 가장 가까운 적 방향: 4 (dy, dx, adjacent, in_range)
-        nearest_enemy = 4
+        # 가장 가까운 적 방향: 5 (dy, dx, adjacent, in_range, ranged_aligned)
+        nearest_enemy = 5
 
-        # 2번째 가까운 적 방향: 4
-        second_enemy = 4
+        # 2번째 가까운 적 방향: 5
+        second_enemy = 5
 
         # 팀원 정보: 5 (alive, hp, dy, dx, role_encoded)
         teammate_info = 5
@@ -316,8 +316,8 @@ class BattleRoyaleEnv(BaseBattleEnv):
         # 자기 스탯 (7차원)
         stats = agent.get_stats()
 
-        # 가장 가까운 적 방향: [dy, dx, adjacent, in_range]
-        enemy_dir_1 = np.zeros(4, dtype=np.float32)
+        # 가장 가까운 적 방향: [dy, dx, adjacent, in_range, ranged_aligned]
+        enemy_dir_1 = np.zeros(5, dtype=np.float32)
         enemies = []
         for other in self.agents:
             if other.agent_id != agent_idx and other.alive:
@@ -334,9 +334,12 @@ class BattleRoyaleEnv(BaseBattleEnv):
             dist1 = abs(agent.y - ne.y) + abs(agent.x - ne.x)
             enemy_dir_1[2] = 1.0 if dist1 == 1 else 0.0
             enemy_dir_1[3] = 1.0 if dist1 <= agent.attack_range else 0.0
+            # ranged_aligned: 같은 행/열에 있고 사거리 내이면 1.0 (딜러 자동조준 힌트)
+            if agent.attack_range > 1 and (ne.y == agent.y or ne.x == agent.x) and dist1 <= agent.attack_range:
+                enemy_dir_1[4] = 1.0
 
         # 2번째 가까운 적 방향
-        enemy_dir_2 = np.zeros(4, dtype=np.float32)
+        enemy_dir_2 = np.zeros(5, dtype=np.float32)
         if len(enemies) >= 2:
             _, se = enemies[1]
             enemy_dir_2[0] = (se.y - agent.y) / max_dim
@@ -344,6 +347,8 @@ class BattleRoyaleEnv(BaseBattleEnv):
             dist2 = abs(agent.y - se.y) + abs(agent.x - se.x)
             enemy_dir_2[2] = 1.0 if dist2 == 1 else 0.0
             enemy_dir_2[3] = 1.0 if dist2 <= agent.attack_range else 0.0
+            if agent.attack_range > 1 and (se.y == agent.y or se.x == agent.x) and dist2 <= agent.attack_range:
+                enemy_dir_2[4] = 1.0
 
         # 팀원 정보: [alive, hp, dy, dx, role_encoded]
         teammate_info = np.zeros(5, dtype=np.float32)

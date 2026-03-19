@@ -28,6 +28,7 @@ ACTION_RIGHT = 3
 ACTION_MELEE = 4       # 근접 공격 (인접 1칸, 전 역할)
 ACTION_RANGED_H = 5    # 원거리 공격 - 가로 (딜러 전용)
 ACTION_RANGED_V = 6    # 원거리 공격 - 세로 (딜러 전용)
+ACTION_RANGED = ACTION_RANGED_H  # 자동 조준 (기존 상수 재활용)
 ACTION_HEAL = 7        # 아군 회복 (힐러 전용)
 ACTION_STAY = 8
 
@@ -36,7 +37,7 @@ NUM_ACTIONS = 9
 # 역할별 행동 매핑: 역할 로컬 인덱스 → 글로벌 행동 인덱스
 ROLE_ACTION_MAP = {
     ROLE_TANK:   [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_STAY],
-    ROLE_DEALER: [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_RANGED_H, ACTION_RANGED_V, ACTION_STAY],
+    ROLE_DEALER: [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_RANGED, ACTION_STAY],
     ROLE_HEALER: [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_HEAL, ACTION_STAY],
 }
 
@@ -315,8 +316,8 @@ class BaseBattleEnv(gym.Env):
                         "type": "death", "x": target.x, "y": target.y,
                     })
 
-            # 원거리 공격 (딜러 전용 — 유효성은 _check_invalid_actions에서)
-            elif act in (ACTION_RANGED_H, ACTION_RANGED_V):
+            # 원거리 공격 (딜러 전용 — 자동 조준, 4방향 스캔)
+            elif act == ACTION_RANGED_H:
                 if not agent.can_ranged_attack:
                     continue  # invalid_action은 별도 처리
                 if not agent.can_attack:
@@ -325,8 +326,7 @@ class BaseBattleEnv(gym.Env):
 
                 agent.attack_count += 1
                 agent.attack_cooldown = agent.attack_cooldown_steps
-                horizontal = (act == ACTION_RANGED_H)
-                target = self._find_ranged_target(agent, horizontal)
+                target = self._find_ranged_target(agent)
                 if target is None:
                     self._step_events[i].append("ranged_miss")
                     continue
@@ -369,16 +369,12 @@ class BaseBattleEnv(gym.Env):
                     return agent
         return None
 
-    def _find_ranged_target(self, attacker: Agent, horizontal: bool) -> Agent | None:
-        """가로 또는 세로 방향으로 최대 attack_range칸 스캔하여 가장 가까운 적을 찾는다.
+    def _find_ranged_target(self, attacker: Agent) -> Agent | None:
+        """4방향(상하좌우) 모두 스캔하여 가장 가까운 적을 자동 타겟.
         벽에 막히면 스캔 중단. 아군은 타겟 안 됨.
         """
         attack_range = attacker.attack_range
-
-        if horizontal:
-            directions = [(0, -1), (0, 1)]  # 좌, 우
-        else:
-            directions = [(-1, 0), (1, 0)]  # 상, 하
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 상, 하, 좌, 우
 
         closest_target = None
         closest_dist = float("inf")
@@ -475,7 +471,7 @@ class BaseBattleEnv(gym.Env):
                 continue
             act = actions[i]
             # 딜러가 아닌데 원거리 공격
-            if act in (ACTION_RANGED_H, ACTION_RANGED_V) and not agent.can_ranged_attack:
+            if act == ACTION_RANGED_H and not agent.can_ranged_attack:
                 self._step_events[i].append("invalid_action")
             # 힐러가 아닌데 힐 (쿨다운 중인 힐러는 제외)
             elif act == ACTION_HEAL and not agent.can_heal:
