@@ -17,6 +17,7 @@ REWARD_KEYS = [
     "heal_ally", "ranged_miss", "invalid_action",
     "team_win", "team_eliminated", "teammate_death",
     "approach_teammate",
+    "proximity",
 ]
 
 # 넥서스 모드 보상 요소 이름 목록

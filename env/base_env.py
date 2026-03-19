@@ -34,9 +34,11 @@ ACTION_STAY = 8
 NUM_ACTIONS = 9
 
 # 역할별 행동 매핑: 역할 로컬 인덱스 → 글로벌 행동 인덱스
+ACTION_RANGED = ACTION_RANGED_H  # 자동 조준 (기존 상수 재활용)
+
 ROLE_ACTION_MAP = {
     ROLE_TANK:   [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_STAY],
-    ROLE_DEALER: [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_RANGED_H, ACTION_RANGED_V, ACTION_STAY],
+    ROLE_DEALER: [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_RANGED, ACTION_STAY],
     ROLE_HEALER: [ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_MELEE, ACTION_HEAL, ACTION_STAY],
 }
 
@@ -315,8 +317,8 @@ class BaseBattleEnv(gym.Env):
                         "type": "death", "x": target.x, "y": target.y,
                     })
 
-            # 원거리 공격 (딜러 전용 — 유효성은 _check_invalid_actions에서)
-            elif act in (ACTION_RANGED_H, ACTION_RANGED_V):
+            # 원거리 공격 (딜러 전용 — 자동 조준)
+            elif act == ACTION_RANGED_H:  # ACTION_RANGED (자동 조준)
                 if not agent.can_ranged_attack:
                     continue  # invalid_action은 별도 처리
                 if not agent.can_attack:
@@ -325,8 +327,7 @@ class BaseBattleEnv(gym.Env):
 
                 agent.attack_count += 1
                 agent.attack_cooldown = agent.attack_cooldown_steps
-                horizontal = (act == ACTION_RANGED_H)
-                target = self._find_ranged_target(agent, horizontal)
+                target = self._find_ranged_target(agent)
                 if target is None:
                     self._step_events[i].append("ranged_miss")
                     continue
@@ -354,8 +355,9 @@ class BaseBattleEnv(gym.Env):
                     })
 
     def _find_melee_target(self, attacker: Agent) -> Agent | None:
-        """인접 4방향에서 가장 가까운 살아있는 적을 찾는다 (아군 제외)."""
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        """인접 8방향(대각선 포함)에서 가장 가까운 살아있는 적을 찾는다 (아군 제외)."""
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1),
+                       (-1, -1), (-1, 1), (1, -1), (1, 1)]:
             ty, tx = attacker.y + dy, attacker.x + dx
             if not (0 <= ty < self.map_height and 0 <= tx < self.map_width):
                 continue
@@ -369,21 +371,15 @@ class BaseBattleEnv(gym.Env):
                     return agent
         return None
 
-    def _find_ranged_target(self, attacker: Agent, horizontal: bool) -> Agent | None:
-        """가로 또는 세로 방향으로 최대 attack_range칸 스캔하여 가장 가까운 적을 찾는다.
-        벽에 막히면 스캔 중단. 아군은 타겟 안 됨.
+    def _find_ranged_target(self, attacker: Agent) -> Agent | None:
+        """4방향(상하좌우) 모두 스캔하여 가장 가까운 적을 자동 타겟.
+        벽에 막히면 해당 방향 스캔 중단. 아군은 타겟 안 됨.
         """
         attack_range = attacker.attack_range
-
-        if horizontal:
-            directions = [(0, -1), (0, 1)]  # 좌, 우
-        else:
-            directions = [(-1, 0), (1, 0)]  # 상, 하
-
         closest_target = None
         closest_dist = float("inf")
 
-        for dy, dx in directions:
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             for dist in range(1, attack_range + 1):
                 ty = attacker.y + dy * dist
                 tx = attacker.x + dx * dist
@@ -446,11 +442,12 @@ class BaseBattleEnv(gym.Env):
                 self._step_events[i].append("attack_miss")  # 만피 팀원
 
     def _find_heal_target(self, healer: Agent) -> Agent | None:
-        """인접 4방향에서 가장 HP가 낮은 살아있는 팀원을 찾는다."""
+        """인접 8방향(대각선 포함)에서 가장 HP가 낮은 살아있는 팀원을 찾는다."""
         best_target = None
         lowest_hp_ratio = 1.0
 
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1),
+                       (-1, -1), (-1, 1), (1, -1), (1, 1)]:
             ty, tx = healer.y + dy, healer.x + dx
             if not (0 <= ty < self.map_height and 0 <= tx < self.map_width):
                 continue
@@ -474,7 +471,7 @@ class BaseBattleEnv(gym.Env):
             if not agent.alive:
                 continue
             act = actions[i]
-            # 딜러가 아닌데 원거리 공격
+            # 딜러가 아닌데 원거리 공격 (ACTION_RANGED_V는 하위호환)
             if act in (ACTION_RANGED_H, ACTION_RANGED_V) and not agent.can_ranged_attack:
                 self._step_events[i].append("invalid_action")
             # 힐러가 아닌데 힐 (쿨다운 중인 힐러는 제외)
@@ -511,24 +508,24 @@ class BaseBattleEnv(gym.Env):
     # ─────────────────────────── 거리 유틸 ────────────────────
 
     def _get_nearest_enemy_dist(self, agent_idx: int) -> float:
-        """가장 가까운 살아있는 적(다른 팀)과의 맨해튼 거리를 반환한다."""
+        """가장 가까운 살아있는 적(다른 팀)과의 체비셰프 거리를 반환한다."""
         agent = self.agents[agent_idx]
         min_dist = float("inf")
         for other in self.agents:
             if other.agent_id != agent_idx and other.alive:
                 if not agent.is_teammate(other):
-                    dist = abs(agent.y - other.y) + abs(agent.x - other.x)
+                    dist = max(abs(agent.y - other.y), abs(agent.x - other.x))
                     min_dist = min(min_dist, dist)
         return min_dist
 
     def _get_nearest_low_hp_teammate_dist(self, agent_idx: int) -> float:
-        """체력이 만피가 아닌 가장 가까운 살아있는 팀원과의 맨해튼 거리를 반환한다."""
+        """체력이 만피가 아닌 가장 가까운 살아있는 팀원과의 체비셰프 거리를 반환한다."""
         agent = self.agents[agent_idx]
         min_dist = float("inf")
         for other in self.agents:
             if other.agent_id != agent_idx and other.alive and agent.is_teammate(other):
                 if other.hp < other.max_hp:  # 만피 아닌 팀원만
-                    dist = abs(agent.y - other.y) + abs(agent.x - other.x)
+                    dist = max(abs(agent.y - other.y), abs(agent.x - other.x))
                     min_dist = min(min_dist, dist)
         return min_dist
 

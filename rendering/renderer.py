@@ -212,6 +212,9 @@ class PygameRenderer:
             # 1. 타일 렌더링
             self._draw_tiles(grid)
 
+            # 1.5. 시야 오버레이 (타일 위, 아이템/에이전트 아래)
+            self._draw_view_ranges(agents)
+
             # 2. 아이템 렌더링
             if item_manager and item_manager.enabled:
                 self._draw_items(item_manager)
@@ -262,6 +265,30 @@ class PygameRenderer:
         """다음 스텝 보간을 위해 현재 상태를 저장한다."""
         self._prev_positions = dict(positions)
         self._prev_hps = dict(hps)
+
+    def _draw_view_ranges(self, agents):
+        """각 에이전트의 관측 시야를 팀 색상 반투명 오버레이로 표시."""
+        cs = self.cell_size
+        cell_surf = pygame.Surface((cs, cs), pygame.SRCALPHA)
+
+        for a in agents:
+            if not a.alive:
+                continue
+            view = getattr(a, "view_range", 9)
+            half = view // 2
+
+            # 팀 색상 + 낮은 알파
+            team_colors = TEAM_COLORS.get(a.team_id, [(150, 150, 150)])
+            base_color = team_colors[0]
+            cell_surf.fill((*base_color, 30))
+
+            for dy in range(-half, half + 1):
+                for dx in range(-half, half + 1):
+                    gy = a.y + dy
+                    gx = a.x + dx
+                    if not (0 <= gy < self.map_height and 0 <= gx < self.map_width):
+                        continue
+                    self.screen.blit(cell_surf, (gx * cs, gy * cs))
 
     def _draw_tiles(self, grid):
         cs = self.cell_size
