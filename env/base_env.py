@@ -120,6 +120,19 @@ class BaseBattleEnv(gym.Env):
         # 역할별 상대 정책 (멀티 정책용)
         self._opponent_policies: dict[str, object] = {}
 
+        # 팀별 역할 정책 (평가/시각화에서 Team0/Team1을 서로 다른 세트로 구동하기 위함)
+        # 예: {0: {"tank": PPO, ...}, 1: {"tank": PPO, ...}}
+        self._team_role_policies: dict[int, dict[str, object]] = {}
+
+        # 평가/시각화 시에는 deterministic=True로 두 팀 모두 안정적으로 비교한다.
+        # (학습/self-play에서는 기본 False 유지)
+        self._policy_deterministic = False
+
+        # 팀/진영 기준으로 정책 입력/출력을 정규화할지 여부.
+        # 예: Team1도 Team0과 동일한 좌표계로 보이도록 관측/행동을 뒤집어서,
+        #     한쪽 진영에 과적합된 정책이라도 양 팀에서 비슷하게 동작하도록 만든다.
+        self._policy_team_normalize = False
+
         # 내부 상태
         self.grid = None
         self.agents: list[Agent] = []
@@ -185,33 +198,113 @@ class BaseBattleEnv(gym.Env):
             except Exception:
                 pass
 
+    def set_team_role_models(self, team_id: int, role_models: dict):
+        """팀별 역할 정책(모델 객체)을 직접 설정한다. (evaluate/visualize 용)"""
+        if role_models is None:
+            self._team_role_policies.pop(team_id, None)
+        else:
+            self._team_role_policies[team_id] = dict(role_models)
+
+    def set_policy_deterministic(self, deterministic: bool):
+        """환경 내부에서 정책 predict 시 deterministic 사용 여부를 설정한다."""
+        self._policy_deterministic = bool(deterministic)
+
+    def set_policy_team_normalize(self, enabled: bool):
+        """정책 입력/출력을 팀 기준으로 정규화할지 설정한다."""
+        self._policy_team_normalize = bool(enabled)
+
+    # ────────────────── 정책 입력/출력 변환 (기본: no-op) ──────────────────
+
+    def transform_obs_for_policy(self, agent_idx: int, obs: np.ndarray) -> np.ndarray:
+        """정책에 넣기 전 관측을 변환한다. (기본: 그대로 반환)"""
+        return obs
+
+    def transform_action_from_policy(self, agent_idx: int, action: int) -> int:
+        """정책이 낸 글로벌 action을 환경 좌표계로 변환한다. (기본: 그대로 반환)"""
+        return action
+
+    def set_team_role_paths(self, team_id: int, paths: dict):
+        """팀별 역할 정책을 경로로 설정하고 로드한다. paths = {role: model_path}"""
+        from stable_baselines3 import PPO, DQN
+        models: dict[str, object] = {}
+        for role, path in (paths or {}).items():
+            if not path:
+                continue
+            try:
+                try:
+                    models[role] = PPO.load(path, device="cpu")
+                except Exception:
+                    models[role] = DQN.load(path, device="cpu")
+            except Exception:
+                pass
+        self.set_team_role_models(team_id, models)
+
+    def set_team_role_paths_bulk(self, team_paths: dict):
+        """여러 팀의 역할 정책 경로를 한 번에 설정한다. team_paths = {team_id: {role: path}}"""
+        for tid, paths in (team_paths or {}).items():
+            try:
+                team_id = int(tid)
+            except Exception:
+                continue
+            self.set_team_role_paths(team_id, paths)
+
     def _get_all_opponent_actions(self) -> list[int]:
         """상대 에이전트 행동을 역할별로 배치 predict해 반환한다.
         같은 역할끼리 obs를 묶어 1회 predict → 개별 호출 대비 ~N배 빠름."""
-        # 살아있는 상대만 역할별로 그룹화
-        role_groups: dict[str, list[int]] = {}
+        # 팀/역할별로 그룹화 (팀마다 다른 정책 세트를 적용할 수 있게)
+        role_groups: dict[tuple[int, str], list[int]] = {}
         for i in range(1, self.num_agents):
             if not self.agents[i].alive:
                 continue
+            team_id = getattr(self.agents[i], "team_id", None)
             role = self.agents[i].role
-            if role in self._opponent_policies:
-                role_groups.setdefault(role, []).append(i)
+
+            # team_id가 없으면 기존 로직(상대 정책)으로 취급
+            if team_id is None:
+                if role in self._opponent_policies:
+                    role_groups.setdefault((1, role), []).append(i)
+                continue
+
+            # 팀별 정책이 있으면 그걸, 없으면 기존 opponent 정책을 사용
+            team_models = self._team_role_policies.get(team_id)
+            if team_models is not None and role in team_models:
+                role_groups.setdefault((team_id, role), []).append(i)
+            elif role in self._opponent_policies:
+                role_groups.setdefault((team_id, role), []).append(i)
 
         # 역할별 배치 predict
         batched: dict[int, int] = {}
-        for role, indices in role_groups.items():
+        for (team_id, role), indices in role_groups.items():
             try:
-                obs_list = [self._get_observation(idx) for idx in indices]
+                obs_list = []
+                for idx in indices:
+                    o = self._get_observation(idx)
+                    if self._policy_team_normalize:
+                        o = self.transform_obs_for_policy(idx, o)
+                    obs_list.append(o)
                 obs_batch = np.stack(obs_list, axis=0)
-                role_actions, _ = self._opponent_policies[role].predict(
-                    obs_batch, deterministic=False)
+                team_models = self._team_role_policies.get(team_id)
+                model = None
+                if team_models is not None:
+                    model = team_models.get(role)
+                if model is None:
+                    model = self._opponent_policies.get(role)
+
+                # 모델이 없으면 랜덤 처리
+                if model is None:
+                    raise RuntimeError("No model for team/role")
+
+                role_actions, _ = model.predict(obs_batch, deterministic=self._policy_deterministic)
                 # 단일 에이전트면 스칼라로 올 수 있으므로 배열 보장
                 role_actions = np.atleast_1d(role_actions)
                 role_map = ROLE_ACTION_MAP[role]
                 for j, idx in enumerate(indices):
                     action_idx = int(role_actions[j])
-                    batched[idx] = (role_map[action_idx]
-                                    if 0 <= action_idx < len(role_map) else ACTION_STAY)
+                    a = (role_map[action_idx]
+                         if 0 <= action_idx < len(role_map) else ACTION_STAY)
+                    if self._policy_team_normalize:
+                        a = self.transform_action_from_policy(idx, a)
+                    batched[idx] = a
             except Exception:
                 # predict 실패 시 해당 역할 에이전트는 랜덤 행동
                 for idx in indices:
@@ -293,26 +386,47 @@ class BaseBattleEnv(gym.Env):
                 agent.attack_count += 1
                 agent.attack_cooldown = agent.attack_cooldown_steps
                 target = self._find_melee_target(agent)
-                if target is None:
+
+                # 1순위: 에이전트 타겟
+                if target is not None:
+                    actual_dmg = target.take_damage(agent.attack)
+                    agent.attack_hits += 1
+                    self._step_events[i].append(("damage_dealt", actual_dmg))
+                    self._render_events.append({
+                        "type": "melee_hit",
+                        "attacker_x": agent.x, "attacker_y": agent.y,
+                        "target_x": target.x, "target_y": target.y,
+                    })
+
+                    if not target.alive:
+                        agent.kills += 1
+                        target.death_step = self.current_step
+                        self._step_events[i].append("kill")
+                        self._step_events[target.agent_id].append("death")
+                        self._render_events.append({
+                            "type": "death", "x": target.x, "y": target.y,
+                        })
+                    continue
+
+                # 2순위: 인접 미니언 타겟 (넥서스 모드 전용)
+                minion_target = self._find_melee_minion_target(agent) if hasattr(self, "minions") else None
+                if minion_target is None:
                     self._step_events[i].append("attack_miss")
                     continue
 
-                actual_dmg = target.take_damage(agent.attack)
+                actual_dmg = minion_target.take_damage(agent.attack)
                 agent.attack_hits += 1
                 self._step_events[i].append(("damage_dealt", actual_dmg))
                 self._render_events.append({
                     "type": "melee_hit",
                     "attacker_x": agent.x, "attacker_y": agent.y,
-                    "target_x": target.x, "target_y": target.y,
+                    "target_x": minion_target.x, "target_y": minion_target.y,
                 })
 
-                if not target.alive:
+                if not minion_target.alive:
                     agent.kills += 1
-                    target.death_step = self.current_step
-                    self._step_events[i].append("kill")
-                    self._step_events[target.agent_id].append("death")
                     self._render_events.append({
-                        "type": "death", "x": target.x, "y": target.y,
+                        "type": "death", "x": minion_target.x, "y": minion_target.y,
                     })
 
             # 원거리 공격 (딜러 전용 — 유효성은 _check_invalid_actions에서)
@@ -327,30 +441,53 @@ class BaseBattleEnv(gym.Env):
                 agent.attack_cooldown = agent.attack_cooldown_steps
                 horizontal = (act == ACTION_RANGED_H)
                 target = self._find_ranged_target(agent, horizontal)
-                if target is None:
+
+                # 1순위: 에이전트 타겟
+                if target is not None:
+                    multiplier = self.roles_cfg.get("dealer", {}).get(
+                        "ranged_damage_multiplier", 0.8)
+                    ranged_dmg = max(1, int(agent.attack * multiplier))
+                    actual_dmg = target.take_damage(ranged_dmg)
+                    agent.attack_hits += 1
+                    self._step_events[i].append(("damage_dealt", actual_dmg))
+                    self._render_events.append({
+                        "type": "ranged_hit",
+                        "attacker_x": agent.x, "attacker_y": agent.y,
+                        "target_x": target.x, "target_y": target.y,
+                    })
+
+                    if not target.alive:
+                        agent.kills += 1
+                        target.death_step = self.current_step
+                        self._step_events[i].append("kill")
+                        self._step_events[target.agent_id].append("death")
+                        self._render_events.append({
+                            "type": "death", "x": target.x, "y": target.y,
+                        })
+                    continue
+
+                # 2순위: 미니언 타겟
+                minion_target = self._find_ranged_minion_target(agent, horizontal) if hasattr(self, "minions") else None
+                if minion_target is None:
                     self._step_events[i].append("ranged_miss")
                     continue
 
-                # 원거리 데미지 = ATK × multiplier
                 multiplier = self.roles_cfg.get("dealer", {}).get(
                     "ranged_damage_multiplier", 0.8)
                 ranged_dmg = max(1, int(agent.attack * multiplier))
-                actual_dmg = target.take_damage(ranged_dmg)
+                actual_dmg = minion_target.take_damage(ranged_dmg)
                 agent.attack_hits += 1
                 self._step_events[i].append(("damage_dealt", actual_dmg))
                 self._render_events.append({
                     "type": "ranged_hit",
                     "attacker_x": agent.x, "attacker_y": agent.y,
-                    "target_x": target.x, "target_y": target.y,
+                    "target_x": minion_target.x, "target_y": minion_target.y,
                 })
 
-                if not target.alive:
+                if not minion_target.alive:
                     agent.kills += 1
-                    target.death_step = self.current_step
-                    self._step_events[i].append("kill")
-                    self._step_events[target.agent_id].append("death")
                     self._render_events.append({
-                        "type": "death", "x": target.x, "y": target.y,
+                        "type": "death", "x": minion_target.x, "y": minion_target.y,
                     })
 
     def _find_melee_target(self, attacker: Agent) -> Agent | None:
@@ -367,6 +504,22 @@ class BaseBattleEnv(gym.Env):
                     continue
                 if agent.y == ty and agent.x == tx:
                     return agent
+        return None
+
+    def _find_melee_minion_target(self, attacker: Agent):
+        """인접 4방향에서 살아있는 적 미니언을 찾는다 (넥서스 모드 전용)."""
+        if not hasattr(self, "minions"):
+            return None
+
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            ty, tx = attacker.y + dy, attacker.x + dx
+            if not (0 <= ty < self.map_height and 0 <= tx < self.map_width):
+                continue
+            for m in self.minions:
+                if not m.alive or m.team_id == attacker.team_id:
+                    continue
+                if m.y == ty and m.x == tx:
+                    return m
         return None
 
     def _find_ranged_target(self, attacker: Agent, horizontal: bool) -> Agent | None:
@@ -403,6 +556,44 @@ class BaseBattleEnv(gym.Env):
                             closest_dist = dist
                             closest_target = agent
                 # 적을 찾았으면 이 방향에서는 더 멀리 볼 필요 없음
+                if closest_target is not None and closest_dist == dist:
+                    break
+
+        return closest_target
+
+    def _find_ranged_minion_target(self, attacker: Agent, horizontal: bool):
+        """가로 또는 세로 방향으로 적 미니언을 스캔한다 (에이전트가 없을 때만 사용)."""
+        if not hasattr(self, "minions"):
+            return None
+
+        attack_range = attacker.attack_range
+
+        if horizontal:
+            directions = [(0, -1), (0, 1)]
+        else:
+            directions = [(-1, 0), (1, 0)]
+
+        closest_target = None
+        closest_dist = float("inf")
+
+        for dy, dx in directions:
+            for dist in range(1, attack_range + 1):
+                ty = attacker.y + dy * dist
+                tx = attacker.x + dx * dist
+
+                if not (0 <= ty < self.map_height and 0 <= tx < self.map_width):
+                    break
+                if self.grid[ty, tx] == TILE_WALL:
+                    break
+
+                for m in self.minions:
+                    if not m.alive or m.team_id == attacker.team_id:
+                        continue
+                    if m.y == ty and m.x == tx:
+                        if dist < closest_dist:
+                            closest_dist = dist
+                            closest_target = m
+                # 타겟을 찾았으면 이 방향 더 이상 스캔할 필요 없음
                 if closest_target is not None and closest_dist == dist:
                     break
 

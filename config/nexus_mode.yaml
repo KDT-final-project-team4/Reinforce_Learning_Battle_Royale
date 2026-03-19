@@ -10,7 +10,7 @@ map:
   wall_placement: "random"
 
 agent:
-  count: 6
+  count: 10
   view_range: 9
   initial_hp: 100
   initial_attack: 10
@@ -18,7 +18,7 @@ agent:
 
 team:
   num_teams: 2
-  agents_per_team: 3  # 탱커 1 + 딜러 1 + 힐러 1
+  agents_per_team: 5  # 팀당 5명 (역할 조합은 코드에서 배정)
   friendly_fire: false
 
 roles:
@@ -26,7 +26,7 @@ roles:
     hp: 150
     attack: 12
     defense: 5
-    attack_range: 1
+    attack_range: 2
     attack_cooldown_steps: 1
   dealer:
     hp: 70
@@ -51,18 +51,18 @@ nexus:
   team_1_region: [16, 18, 16, 18]
 
 minion:
-  spawn_start_step: 15     # 게임 시작 후 15스텝부터 미니언 생성
-  spawn_interval: 25       # 25스텝마다 웨이브 스폰
+  spawn_start_step: 45     # 게임 시작 후 45스텝부터 미니언 생성
+  spawn_interval: 100      # 100스텝마다 웨이브 스폰
   per_wave: 2              # 팀당 웨이브당 2마리
-  hp: 30
-  attack: 5
-  detection_range: 5       # 적 에이전트 감지 범위 (맨해튼 거리)
-  max_per_team: 8          # 팀당 최대 미니언 수
+  hp: 10
+  attack: 3
+  detection_range: 5      # 적 에이전트 감지 범위 (맨해튼 거리)
+  max_per_team: 6         # 팀당 최대 미니언 수
 
 respawn:
   base_time: 5             # 첫 사망 시 부활 대기 시간 (스텝)
   increment_per_death: 3   # 사망 횟수당 추가 대기 시간
-  spawn_radius: 3          # 넥서스로부터 부활 반경
+  spawn_radius: 6          # 넥서스로부터 부활 반경
 
 items:
   enabled: true
@@ -84,85 +84,92 @@ game:
 
 reward:
   # 넥서스 관련
-  nexus_damage: 3.0           # 적 넥서스에 데미지 (per damage point는 아님, 공격 성공 시)
-  own_nexus_damaged: -2.0     # 아군 넥서스 피격
+  nexus_damage: 10.0          # 넥서스 타격 유인을 크게 증가 (에이전트와의 1:1 교전 이탈 유도)
+  own_nexus_damaged: -4.0     # 아군 넥서스 피격 패널티 강화 (수비 유도)
   nexus_destroyed_win: 30.0   # 승리
-  nexus_destroyed_loss: -20.0 # 패배
+  nexus_destroyed_loss: -40.0 # 패배 패널티 강화 → 자기 넥서스 방치 억제
   # 전투
-  kill: 5.0
-  death: -5.0
-  damage_dealt: 0.8
+  kill: 40.0             # 교전/킬 보상 강화
+  death: -15.0           # 죽음 패널티 더 강화 → 무리한 맞교환 억제
+  damage_dealt: 0.8      # 교전 유도 (연속 공격의 “스텝당” 누적 보상 완화)
   # 아이템
-  item_pickup: 1.5
-  low_hp_potion_bonus: 2.0
+  item_pickup: 6.0
+  low_hp_potion_bonus: 10.0
   low_hp_potion_threshold: 0.5
   # 힐
   heal_ally: 1.5
   heal_low_hp_ally: 4.0
   heal_hp_threshold: 0.5
   # 미니언
-  minion_kill: 1.0
-  minion_kill_near_nexus: 2.0  # 아군 넥서스 근처에서 적 미니언 처치
-  minion_kill_nexus_radius: 4  # "근처" 판정 반경
+  minion_kill: 0.7
+  minion_kill_near_nexus: 0.7  # 아군 넥서스 근처에서 적 미니언 처치
+  minion_kill_nexus_radius: 3  # "근처" 판정 반경
   # 행동
-  approach_enemy_nexus: 0.05
-  approach_enemy: 0.05
+  # 적/넥서스 접근 보상은 너무 크면 \"한 대 치고 이동\" 패턴이 강화되므로 완만하게 유지
+  approach_enemy_nexus: 0.3
+  approach_enemy: 0.1
   approach_teammate: 0.0
-  defend_nexus_bonus: 0.1
+  defend_nexus_bonus: 0.05    # 우리 넥서스 근처에서 적이 있을 때 '싸우며 수비' 유인 약화
   defend_nexus_radius: 4
-  idle_penalty: -0.03
+  stay_near_own_nexus_penalty: -0.08  # 적이 멀리 있을 때 자기 넥서스 근처에만 있으면 패널티
+  stay_near_radius: 4                 # "넥서스 근처" 판정 반경
+  stay_near_enemy_far: 6              # 적이 이 거리보다 멀면 "캠핑"으로 간주
+  idle_penalty: -0.12                 # 가만히 있는 것에 대한 패널티
   wall_bump: -0.1
   attack_miss: -0.2
   ranged_miss: -0.1
   invalid_action: -0.1
   oscillation_penalty: -0.05
-  no_combat_penalty: -0.1
-  no_combat_threshold: 40
-  survival_per_step: 0.02
-  combo_bonus: 0.3
-  # 쿨다운
-  attack_cooldown_penalty: -0.2
-  heal_cooldown_penalty: -0.2
+  no_combat_penalty: -2.5
+  no_combat_threshold: 45 # 무전투 시 패널티에 대한 임계값 (짧은 거리벌리기 허용)
+  survival_per_step: 0.03 # 살아남는 것에 소량 보상 (생존 우선도 약간 증가)
+  combo_bonus: 0.0        # 연속 공격(콤보) 자체 보상 제거
+  # 쿨다운(공격이나 힐을 계속 시도하는 것에 대한 패널티)
+  attack_cooldown_penalty: -5.0   # 쿨다운 무시 연타를 매우 강하게 억제
+  heal_cooldown_penalty: -2.0
   # 팀 관련
-  teammate_death: -2.0
+  teammate_death: -14.0
   # 시간 초과 시 넥서스 HP 비율 보상
   timeout_nexus_advantage: 10.0
   timeout_nexus_disadvantage: -8.0
 
 role_rewards:
   tank:
-    defend_nexus_bonus: 0.3
-    approach_enemy_nexus: 0.15
-    approach_enemy: 0.15
-    no_combat_penalty: -0.15
-    no_combat_threshold: 30
+    defend_nexus_bonus: 0.0
+    damage_dealt: 0.4
+    combo_bonus: 0.0
+    approach_enemy_nexus: 0.6
+    approach_enemy: 0.3
+    no_combat_penalty: -8.0
+    no_combat_threshold: 35
   dealer:
-    nexus_damage: 4.0
-    approach_enemy_nexus: 0.1
-    approach_enemy: 0.1
-    ranged_miss: -0.05
-    attack_miss: -0.15
+    nexus_damage: 12.0
+    approach_enemy_nexus: 0.7
+    approach_enemy: 0.4
+    damage_dealt: 0.5
+    combo_bonus: 0.0
+    ranged_miss: -0.07
+    attack_miss: -0.18
   healer:
-    heal_ally: 2.0
-    heal_low_hp_ally: 6.0
+    heal_ally: 12.5
+    heal_low_hp_ally: 20.0
     death: -8.0
-    approach_teammate: 0.3
+    approach_teammate: 8.5
     nexus_damage: 1.0
-    no_combat_penalty: -0.02
-    no_combat_threshold: 80
-    survival_per_step: 0.04
-
+    no_combat_penalty: -20.02
+    no_combat_threshold: 50
+    
 training:
   algorithm: "PPO"
   multi_policy: true
-  num_rounds: 10
-  steps_per_round: 300000
-  total_timesteps: 3000000
+  num_rounds: 6
+  steps_per_round: 30000
+  total_timesteps: 30000000        
   learning_rate: 0.0001
-  n_envs: 8
+  n_envs: 8                       
   self_play: true
-  opponent_update_interval: 25000
-  net_arch: [256, 256]
-  gamma: 0.995
-  n_steps: 4096
-  ent_coef: 0.02
+  opponent_update_interval: 150000
+  net_arch: [256, 256]            
+  gamma: 0.999
+  n_steps: 4096               
+  ent_coef: 0.05 # 초반 탐험 강화
