@@ -32,7 +32,7 @@ roles:
     defense: 0
     attack_range: 3
     ranged_damage_multiplier: 0.8
-    attack_cooldown_steps: 1  # 2→1 쿨다운 완화 (DPS 향상)
+    attack_cooldown_steps: 1 # 2→1 쿨다운 완화 (DPS 향상)
   healer:
     hp: 100
     attack: 6
@@ -138,19 +138,19 @@ role_rewards:
     no_combat_penalty: -0.03
     no_combat_threshold: 60
     idle_penalty: -0.01
-    attack_miss: -0.15           # -0.02→-0.15 허공 공격 강력 억제 (110회 0% 명중 방지)
-    approach_enemy: 0.1          # 0.0→0.1 적 접근 인센티브 (명중하려면 접근 필요)
+    attack_miss: -0.15 # -0.02→-0.15 허공 공격 강력 억제 (110회 0% 명중 방지)
+    approach_enemy: 0.1 # 0.0→0.1 적 접근 인센티브 (명중하려면 접근 필요)
     approach_teammate: 0.4
     heal_ally: -0.5
     heal_low_hp_ally: 7.0
     heal_hp_threshold: 0.7
     teammate_death: -5.0
-    survival_per_step: 0.02      # 0.05→0.02 소극적 플레이 방지 (base와 동일)
+    survival_per_step: 0.02 # 0.05→0.02 소극적 플레이 방지 (base와 동일)
 
 training:
   algorithm: 'PPO'
   multi_policy: true
-  num_rounds: 10
+  num_rounds: 7
   steps_per_round: 300000
   total_timesteps: 3000000
   learning_rate: 0.0001

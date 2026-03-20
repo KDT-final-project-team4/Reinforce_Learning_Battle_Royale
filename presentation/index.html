@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BattleRL Arena - 강화학습 기반 2D 배틀로얄 시뮬레이션</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f5f7fa;
+  --card: #ffffff;
+  --accent: #d63384;
+  --secondary: #0d6efd;
+  --text: #212529;
+  --text-dim: #6c757d;
+  --code-bg: #f0f2f5;
+  --border: #dee2e6;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', 'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.slide {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 50px 80px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  pointer-events: none;
+  overflow-y: auto;
+}
+
+.slide.active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.slide-content {
+  max-width: 1100px;
+  width: 100%;
+}
+
+h1 {
+  font-size: 3.2em;
+  font-weight: 800;
+  margin-bottom: 0.3em;
+  line-height: 1.2;
+}
+
+h2 {
+  font-size: 1.9em;
+  font-weight: 700;
+  margin-bottom: 0.6em;
+  color: var(--secondary);
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.3em;
+}
+
+h3 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 0.7em 0 0.35em;
+  color: var(--accent);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 1.4em;
+  color: var(--text-dim);
+  margin-bottom: 0.5em;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 20px 26px;
+  margin: 10px 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+  margin: 8px 0;
+}
+
+th {
+  background: var(--accent);
+  color: #fff;
+  padding: 9px 12px;
+  text-align: left;
+  font-weight: 600;
+}
+
+td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+tr:nth-child(even) td { background: #f8f9fa; }
+tr:nth-child(odd) td { background: #ffffff; }
+tr:hover td { background: rgba(214,51,132,0.08); }
+
+ul { list-style: none; padding-left: 0; }
+ul li {
+  padding: 5px 0 5px 22px;
+  position: relative;
+  font-size: 0.95em;
+}
+ul li::before {
+  content: '\25B8';
+  color: var(--accent);
+  position: absolute;
+  left: 4px;
+}
+
+.code-block {
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-family: 'Consolas', 'D2Coding', monospace;
+  font-size: 0.82em;
+  line-height: 1.7;
+  overflow-x: auto;
+  white-space: pre;
+  border: 1px solid #e0e3e7;
+  margin: 8px 0;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.toc-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.toc-list li {
+  padding: 12px 18px;
+  background: var(--card);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+  font-size: 1.05em;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.toc-list li::before { content: none; }
+.toc-list li:hover {
+  background: rgba(214,51,132,0.08);
+  transform: translateX(6px);
+}
+.toc-list li span.num {
+  color: var(--accent);
+  font-weight: 700;
+  margin-right: 10px;
+  font-size: 1.1em;
+}
+
+#slide-indicator {
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  font-size: 0.9em;
+  color: var(--text-dim);
+  z-index: 100;
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+  padding: 6px 14px;
+  border-radius: 20px;
+  user-select: none;
+}
+
+.center-text { text-align: center; }
+
+.big-title {
+  font-size: 3em;
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 0.3em;
+}
+
+.dim { color: var(--text-dim); }
+
+.compact-table td, .compact-table th { padding: 5px 9px; font-size: 0.82em; }
+
+.highlight { color: var(--accent); font-weight: 600; }
+.highlight-sec { color: var(--secondary); font-weight: 600; }
+.highlight-heal { color: #f9ca24; font-weight: 600; }
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  margin: 10px 0;
+  padding-left: 28px;
+  position: relative;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: 6px; top: 12px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.timeline-item::after {
+  content: '';
+  position: absolute;
+  left: 11px; top: 26px;
+  width: 2px;
+  height: calc(100% + 4px);
+  background: var(--border);
+}
+.timeline-item:last-child::after { display: none; }
+
+.tag {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  margin-right: 6px;
+}
+.tag.sec { background: var(--secondary); color: #fff; }
+.tag.heal { background: #f9ca24; color: #212529; }
+
+@media (max-width: 900px) {
+  .slide { padding: 24px 20px; }
+  h1 { font-size: 2em; }
+  h2 { font-size: 1.3em; }
+  .two-col, .toc-list { grid-template-columns: 1fr; }
+  table { font-size: 0.72em; }
+  .big-title { font-size: 2em; }
+}
+</style>
+</head>
+<body>
+
+<!-- Slide 1: Cover -->
+<div class="slide active" id="slide-1">
+  <div class="slide-content center-text">
+    <h1 class="gradient-text" style="font-size:4.2em; margin-bottom:0.15em;">BattleRL Arena</h1>
+    <p class="subtitle" style="font-size:1.5em; margin-top:12px;">강화학습 기반 2D 배틀로얄 시뮬레이션</p>
+    <div style="margin-top:40px; display:flex; justify-content:center; gap:12px;">
+      <span class="tag" style="font-size:1.05em; padding:8px 22px;">KDT-team-4</span>
+      <span class="tag sec" style="font-size:1.05em; padding:8px 22px;">2026.03</span>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 2: 목차 -->
+<div class="slide" id="slide-2">
+  <div class="slide-content">
+    <h2>목차</h2>
+    <ul class="toc-list">
+      <li onclick="goTo(3)"><span class="num">01</span>프로젝트 개요</li>
+      <li onclick="goTo(4)"><span class="num">02</span>게임 환경</li>
+      <li onclick="goTo(6)"><span class="num">03</span>사용 알고리즘 (DQN &rarr; PPO)</li>
+      <li onclick="goTo(7)"><span class="num">04</span>학습 방식 (멀티 폴리시 + 셀프 플레이)</li>
+      <li onclick="goTo(8)"><span class="num">05</span>Phase별 진화 과정</li>
+      <li onclick="goTo(9)"><span class="num">06</span>보상 설계</li>
+      <li onclick="goTo(10)"><span class="num">07</span>학습 결과 분석</li>
+      <li onclick="goTo(12)"><span class="num">08</span>넥서스 모드</li>
+      <li onclick="goTo(13)"><span class="num">09</span>하이퍼파라미터 요약 + 한계와 향후 발전</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Slide 3: 프로젝트 개요 -->
+<div class="slide" id="slide-3">
+  <div class="slide-content">
+    <h2>프로젝트 개요</h2>
+    <div class="card">
+      <ul>
+        <li><strong>20x20 격자 맵</strong>, 3팀(2명씩, 총 6명) 배틀로얄</li>
+        <li><strong>보상 신호만으로</strong> 전투/생존 전략을 스스로 학습</li>
+        <li>역할 시스템: <span class="highlight">탱커</span> / <span class="highlight-sec">딜러</span> / <span class="highlight-heal">힐러</span></li>
+      </ul>
+    </div>
+    <h3>Tech Stack</h3>
+    <table>
+      <tr><th>구분</th><th>사용 기술</th></tr>
+      <tr><td>언어</td><td>Python 3.10+</td></tr>
+      <tr><td>RL 프레임워크</td><td>Stable Baselines3 (SB3)</td></tr>
+      <tr><td>환경 인터페이스</td><td>Gymnasium</td></tr>
+      <tr><td>시각화</td><td>Pygame</td></tr>
+      <tr><td>모니터링</td><td>TensorBoard</td></tr>
+      <tr><td>설정 관리</td><td>YAML</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- Slide 4: 게임 환경 -->
+<div class="slide" id="slide-4">
+  <div class="slide-content">
+    <h2>게임 환경 - 맵과 규칙</h2>
+    <div class="two-col" style="margin-bottom:14px;">
+      <div>
+        <div class="code-block" style="font-size:0.78em;">+--------------------+
+| . . # . . . . . P .|    20x20 격자 맵
+| . . . . . A0 . . . |    # = 벽 (이동/공격 차단)
+| . . . . . . . . . .|    A0~A5 = 에이전트 6명
+| . # . A1 . . . . . |
+| . . . . . . . . . .|
+| . . . . ~~~~~ . . .|    ~ = 자기장 (HP 10/스텝)
++--------------------+</div>
+      </div>
+      <div class="card">
+        <h3>핵심 규칙</h3>
+        <ul>
+          <li><strong>3팀 x 2명</strong> = 총 6명</li>
+          <li>승리 조건: <span class="highlight">마지막 생존 팀</span></li>
+          <li>자기장: 스텝 40부터 축소, 최종 4x4</li>
+          <li>영구 사망 (부활 없음)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+      <!-- 캐릭터 -->
+      <div class="card">
+        <h3 style="margin-top:0;">캐릭터</h3>
+        <div style="display:flex; justify-content:space-around; align-items:flex-start;">
+          <div style="text-align:center;">
+            <img src="../rendering/assets/agent_tank_red.png" alt="탱커" style="width:56px; height:56px; image-rendering:pixelated; display:block; margin:0 auto;">
+            <p style="margin-top:5px; font-weight:700; color:var(--accent); font-size:0.9em;">탱커</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">HP 150 · 근접</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">높은 생존력</p>
+          </div>
+          <div style="text-align:center;">
+            <img src="../rendering/assets/agent_dealer_blue.png" alt="딜러" style="width:56px; height:56px; image-rendering:pixelated; display:block; margin:0 auto;">
+            <p style="margin-top:5px; font-weight:700; color:var(--secondary); font-size:0.9em;">딜러</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">HP 70 · 원거리</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">자동 조준</p>
+          </div>
+          <div style="text-align:center;">
+            <img src="../rendering/assets/agent_healer_green.png" alt="힐러" style="width:56px; height:56px; image-rendering:pixelated; display:block; margin:0 auto;">
+            <p style="margin-top:5px; font-weight:700; color:#27ae60; font-size:0.9em;">힐러</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">HP 100 · 근접</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">팀원 회복</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 아이템 -->
+      <div class="card">
+        <h3 style="margin-top:0;">아이템</h3>
+        <div style="display:flex; justify-content:space-around; align-items:flex-start;">
+          <div style="text-align:center;">
+            <img src="../rendering/assets/item_potion.png" alt="포션" style="width:56px; height:56px; image-rendering:pixelated; display:block; margin:0 auto;">
+            <p style="margin-top:5px; font-weight:700; color:#e74c3c; font-size:0.9em;">포션</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">HP 회복</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">힐러 1.5배</p>
+          </div>
+          <div style="text-align:center;">
+            <img src="../rendering/assets/item_weapon.png" alt="무기" style="width:56px; height:56px; image-rendering:pixelated; display:block; margin:0 auto;">
+            <p style="margin-top:5px; font-weight:700; color:#e67e22; font-size:0.9em;">무기</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">공격력 증가</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">자동 획득</p>
+          </div>
+          <div style="text-align:center;">
+            <img src="../rendering/assets/item_armor.png" alt="방어구" style="width:56px; height:56px; image-rendering:pixelated; display:block; margin:0 auto;">
+            <p style="margin-top:5px; font-weight:700; color:#8e44ad; font-size:0.9em;">방어구</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">방어력 증가</p>
+            <p style="font-size:0.75em; color:var(--text-dim);">자동 획득</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 5: 역할 시스템 + 관측/행동 -->
+<div class="slide" id="slide-5">
+  <div class="slide-content">
+    <h2>역할 시스템 + 관측/행동</h2>
+    <table>
+      <tr><th>역할</th><th>HP</th><th>공격력</th><th>방어력</th><th>사거리</th><th>쿨다운</th><th>특징</th></tr>
+      <tr><td><span class="highlight">탱커</span></td><td>150</td><td>12</td><td>5</td><td>1(근접)</td><td>1스텝</td><td>높은 생존력</td></tr>
+      <tr><td><span class="highlight-sec">딜러</span></td><td>70</td><td>15</td><td>0</td><td>3(원거리)</td><td>1스텝</td><td>자동 조준</td></tr>
+      <tr><td><span class="highlight-heal">힐러</span></td><td>100</td><td>6</td><td>2</td><td>1(근접)</td><td>힐 3스텝</td><td>팀원 회복</td></tr>
+    </table>
+    <div class="two-col" style="margin-top:14px;">
+      <div class="card">
+        <h3>관측 공간</h3>
+        <p style="font-size:1.1em; margin-bottom:6px;"><strong>349차원</strong></p>
+        <ul>
+          <li>4ch 9x9 시야맵 (벽/아군/적/아이템)</li>
+          <li>자신 스탯 (HP, 쿨다운 등)</li>
+          <li>적/팀원/게임 정보</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>행동 공간</h3>
+        <ul>
+          <li><span class="highlight">탱커</span>: 6가지 (이동4 + 근접 + 대기)</li>
+          <li><span class="highlight-sec">딜러</span>: 7가지 (이동4 + 근접 + 원거리 + 대기)</li>
+          <li><span class="highlight-heal">힐러</span>: 7가지 (이동4 + 근접 + 힐 + 대기)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 6: DQN → PPO -->
+<div class="slide" id="slide-6">
+  <div class="slide-content">
+    <h2>사용 알고리즘: DQN &rarr; PPO</h2>
+    <div class="two-col">
+      <div class="card">
+        <h3>DQN</h3>
+        <ul>
+          <li>Q-테이블을 <strong>신경망</strong>으로 근사</li>
+          <li>Phase 1 (10x10, 2명, 500K)</li>
+          <li>Experience Replay + Target Network</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>PPO</h3>
+        <ul>
+          <li><strong>정책 직접 학습</strong> + clipping</li>
+          <li>Phase 2+ 복잡한 환경에 적용</li>
+          <li>병렬 환경 효율적 활용</li>
+        </ul>
+      </div>
+    </div>
+    <table style="margin-top:16px;">
+      <tr><th>항목</th><th>DQN</th><th>PPO</th></tr>
+      <tr><td>학습 방식</td><td>Q값 추정 (간접)</td><td>정책 직접 학습</td></tr>
+      <tr><td>안정성</td><td>환경 복잡해지면 불안정</td><td>clipping으로 안정적</td></tr>
+      <tr><td>다중 에이전트</td><td>어려움</td><td>셀프플레이와 결합</td></tr>
+      <tr><td>병렬 환경</td><td>제한적</td><td>n_envs 효율적</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- Slide 7: 멀티 폴리시 + 셀프 플레이 -->
+<div class="slide" id="slide-7">
+  <div class="slide-content">
+    <h2>멀티 폴리시 + 셀프 플레이</h2>
+    <div class="card" style="border-left: 3px solid var(--accent);">
+      <h3 style="margin-top:0;">단일 폴리시의 한계</h3>
+      <p>PPO 1개로 3역할 &rarr; <span class="highlight">모순된 학습 신호</span>, 어정쩡한 행동</p>
+    </div>
+    <table class="compact-table" style="margin-top:12px;">
+      <tr><th>비교</th><th>단일 폴리시</th><th>멀티 폴리시</th></tr>
+      <tr><td>모델 수</td><td>1개</td><td><span class="highlight-sec">3개 (역할별)</span></td></tr>
+      <tr><td>행동 공간</td><td>9개 (invalid 발생)</td><td>역할별 6~7개</td></tr>
+      <tr><td>학습 신호</td><td>모순</td><td>일관</td></tr>
+      <tr><td>역할 특화</td><td>약함</td><td><strong>강함</strong></td></tr>
+    </table>
+    <div class="card" style="margin-top:12px;">
+      <h3 style="margin-top:0;">라운드 로빈 학습</h3>
+      <div class="code-block" style="font-size:0.8em;">Round 1:  Tank 300K  &rarr;  Dealer 300K  &rarr;  Healer 300K  &rarr;  스냅샷 저장
+Round 2:  Tank 300K  &rarr;  Dealer 300K  &rarr;  Healer 300K  &rarr;  스냅샷 저장
+  ...
+Round 10: Tank 300K  &rarr;  Dealer 300K  &rarr;  Healer 300K  &rarr;  최종 모델
+
+총 학습량: 역할당 3M 스텝</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 8: Phase 1~3 -->
+<div class="slide" id="slide-8">
+  <div class="slide-content">
+    <h2>Phase 1~3 진화 과정</h2>
+    <div class="timeline-item">
+      <div class="card" style="width:100%;">
+        <h3 style="margin-top:0;"><span class="tag">Phase 1</span> DQN 기초</h3>
+        <p>10x10 맵, 2명, DQN, <strong>500K 스텝</strong></p>
+        <p class="dim">"접근 &rarr; 공격" 기본 전투 패턴 학습</p>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="card" style="width:100%;">
+        <h3 style="margin-top:0;"><span class="tag sec">Phase 2</span> PPO 전환</h3>
+        <p>15x15 맵, 2명, PPO, <strong>700K 스텝</strong></p>
+        <p class="dim">아이템 + 자기장 추가, 안정적 학습</p>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="card" style="width:100%;">
+        <h3 style="margin-top:0;"><span class="tag heal">Phase 3</span> FFA 확장</h3>
+        <p>20x20 맵, 5명, PPO, <strong>2M 스텝</strong></p>
+        <p class="dim">순위 보상, 도주 전략 출현</p>
+      </div>
+    </div>
+    <div class="card" style="border-left: 3px solid var(--secondary); margin-top:8px;">
+      <p style="font-size:1.05em;"><strong>핵심 교훈:</strong> <em>"보상 하나를 바꾸면 행동 전체가 바뀜"</em></p>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 9: Phase 4 보상 설계 -->
+<div class="slide" id="slide-9">
+  <div class="slide-content">
+    <h2>Phase 4 보상 설계</h2>
+    <table class="compact-table">
+      <tr><th>보상 항목</th><th>탱커</th><th>딜러</th><th>힐러</th></tr>
+      <tr><td>적 접근</td><td>0.6</td><td>0.35</td><td>0.1</td></tr>
+      <tr><td>데미지</td><td>2.0</td><td>2.2</td><td>0.8</td></tr>
+      <tr><td>공격 miss</td><td>-0.3</td><td>-0.15</td><td>-0.15</td></tr>
+      <tr><td>사망</td><td>-10</td><td>-12.0</td><td>-12.0</td></tr>
+      <tr><td>팀원 접근</td><td>-</td><td>-</td><td>0.4</td></tr>
+      <tr><td>저체력 힐</td><td>-</td><td>-</td><td><span class="highlight-heal">7.0</span></td></tr>
+      <tr><td>팀원 사망</td><td>-3.0</td><td>-3.0</td><td><span class="highlight">-5.0</span></td></tr>
+    </table>
+    <h3>시행착오 (Trial & Error)</h3>
+    <div class="card" style="font-size:0.85em;">
+      <ol style="padding-left:18px; line-height:1.85;">
+        <li>단일 폴리시 실패 &rarr; <strong>멀티 폴리시 전환</strong></li>
+        <li>no_combat 페널티 지배 &rarr; 완화</li>
+        <li>딜러 H/V 방향 선택 문제 &rarr; <strong>자동 조준</strong></li>
+        <li>힐러 허공 공격 110회 0% 명중 &rarr; <strong>miss 페널티 강화</strong></li>
+        <li>딜러 DPS 부족 &rarr; <strong>쿨다운 1스텝으로 완화</strong></li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 10: 학습 결과 분석 -->
+<div class="slide" id="slide-10">
+  <div class="slide-content">
+    <h2>학습 결과 분석</h2>
+    <table>
+      <tr><th>지표</th><th>탱커</th><th>딜러</th><th>힐러</th></tr>
+      <tr><td>승률</td><td><span class="highlight-sec">39.0%</span></td><td>20.2%</td><td><span class="highlight-sec">40.4%</span></td></tr>
+      <tr><td>데미지</td><td>+43.6</td><td>+27.2</td><td>+11.7</td></tr>
+      <tr><td>킬</td><td>+14.5</td><td>+4.7</td><td>+3.3</td></tr>
+      <tr><td>사망</td><td>-6.6</td><td><span class="highlight">-8.5</span></td><td>-7.2</td></tr>
+      <tr><td>힐 보상</td><td>-</td><td>-</td><td><span class="highlight-heal">+34.7</span></td></tr>
+    </table>
+    <div class="two-col" style="margin-top:12px; font-size:0.9em;">
+      <div class="card">
+        <h3 style="margin-top:0;">역할별 분석</h3>
+        <ul>
+          <li><span class="highlight">탱커</span>: combo 학습 완료, 명중률 향상</li>
+          <li><span class="highlight-heal">힐러</span>: 힐 학습 성공(+34.7), 전투 미참여 문제</li>
+          <li><span class="highlight-sec">딜러</span>: 승률 최하(20%), DPS/생존 부족</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">분석 후 조정</h3>
+        <table class="compact-table" style="margin:0;">
+          <tr><th>조정</th><th>변경</th><th>이유</th></tr>
+          <tr><td>딜러 쿨다운</td><td>2&rarr;1스텝</td><td>DPS 향상</td></tr>
+          <tr><td>힐러 miss</td><td>-0.02&rarr;-0.15</td><td>허공 공격 억제</td></tr>
+          <tr><td>힐러 survival</td><td>0.05&rarr;0.02</td><td>소극적 방지</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 11: 시연 -->
+<div class="slide" id="slide-11">
+  <div class="slide-content center-text" style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+    <p class="big-title gradient-text">2:2:2 배틀로얄 시연</p>
+    <p class="subtitle" style="margin-top:8px;">3팀 x 2명, 역할 시스템, 자동 조준</p>
+    <div class="code-block" style="display:inline-block; margin-top:30px; text-align:left; font-size:0.9em;">python evaluation/visualize_battle.py \
+  --model-dir models/multi_policy \
+  --config config/phase4_team.yaml \
+  --fps 3</div>
+  </div>
+</div>
+
+<!-- Slide 12: 넥서스 모드 -->
+<div class="slide" id="slide-12">
+  <div class="slide-content center-text" style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+    <p class="big-title" style="color:var(--secondary);">넥서스 모드 (Nexus Mode)</p>
+    <p class="subtitle dim" style="margin-top:20px;">TODO: 넥서스 모드 설명 추가 예정</p>
+  </div>
+</div>
+
+<!-- Slide 13: 요약 + 한계/미래 -->
+<div class="slide" id="slide-13">
+  <div class="slide-content">
+    <h2>요약 + 한계와 향후 발전</h2>
+    <table class="compact-table">
+      <tr><th>파라미터</th><th>Phase 1</th><th>Phase 2</th><th>Phase 3</th><th>Phase 4</th></tr>
+      <tr><td>알고리즘</td><td>DQN</td><td>PPO</td><td>PPO</td><td><span class="highlight">PPO x3</span></td></tr>
+      <tr><td>맵</td><td>10x10</td><td>15x15</td><td>20x20</td><td>20x20</td></tr>
+      <tr><td>에이전트</td><td>2명</td><td>2명</td><td>5명</td><td><span class="highlight-sec">6명(3팀)</span></td></tr>
+      <tr><td>스텝</td><td>500K</td><td>700K</td><td>2M</td><td>역할당 3M</td></tr>
+    </table>
+    <div class="two-col" style="margin-top:12px;">
+      <div class="card">
+        <h3 style="margin-top:0;">현재 한계</h3>
+        <ul>
+          <li>대각선 원거리 불가</li>
+          <li>관측 9x9 제한</li>
+          <li>보상 엔지니어링 의존</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">향후 발전</h3>
+        <ul>
+          <li>MARL 프레임워크 (RLlib)</li>
+          <li>커뮤니케이션 학습</li>
+          <li>보상 자동 탐색</li>
+        </ul>
+      </div>
+    </div>
+    <div class="center-text" style="margin-top:24px;">
+      <p class="big-title gradient-text" style="font-size:2.2em;">감사합니다</p>
+      <p class="subtitle dim">Q&A</p>
+    </div>
+  </div>
+</div>
+
+<div id="slide-indicator">1 / 13</div>
+
+<script>
+(function() {
+  var slides = document.querySelectorAll('.slide');
+  var indicator = document.getElementById('slide-indicator');
+  var total = slides.length;
+  var current = 0;
+
+  function showSlide(n) {
+    if (n < 0 || n >= total || n === current) return;
+    slides[current].classList.remove('active');
+    current = n;
+    slides[current].classList.add('active');
+    indicator.textContent = (current + 1) + ' / ' + total;
+  }
+
+  window.goTo = function(n) {
+    showSlide(n - 1);
+  };
+
+  document.addEventListener('keydown', function(e) {
+    switch(e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        e.preventDefault();
+        showSlide(current + 1);
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        e.preventDefault();
+        showSlide(current - 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        showSlide(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        showSlide(total - 1);
+        break;
+    }
+  });
+
+  var touchStartX = 0;
+  document.addEventListener('touchstart', function(e) {
+    touchStartX = e.touches[0].clientX;
+  });
+  document.addEventListener('touchend', function(e) {
+    var diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0) showSlide(current + 1);
+      else showSlide(current - 1);
+    }
+  });
+})();
+</script>
+</body>
+</html>
