@@ -19,7 +19,8 @@ from env.zone import ZoneManager
 from env.base_env import (
     BaseBattleEnv,
     ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT,
-    ACTION_MELEE, ACTION_RANGED_H, ACTION_RANGED_V, ACTION_HEAL, ACTION_STAY,
+    ACTION_MELEE, ACTION_RANGED_H, ACTION_RANGED_V, ACTION_RANGED,
+    ACTION_HEAL, ACTION_STAY,
     NUM_ACTIONS, ROLE_ACTION_MAP, MOVE_DELTAS,
 )
 
@@ -322,7 +323,8 @@ class BattleRoyaleEnv(BaseBattleEnv):
         for other in self.agents:
             if other.agent_id != agent_idx and other.alive:
                 if not agent.is_teammate(other):
-                    dist = abs(agent.y - other.y) + abs(agent.x - other.x)
+                    # 체비셰프 거리 (대각선 인접 = 1)
+                    dist = max(abs(agent.y - other.y), abs(agent.x - other.x))
                     enemies.append((dist, other))
         enemies.sort(key=lambda e: e[0])
 
@@ -331,12 +333,15 @@ class BattleRoyaleEnv(BaseBattleEnv):
             _, ne = enemies[0]
             enemy_dir_1[0] = (ne.y - agent.y) / max_dim
             enemy_dir_1[1] = (ne.x - agent.x) / max_dim
-            dist1 = abs(agent.y - ne.y) + abs(agent.x - ne.x)
+            dist1 = max(abs(agent.y - ne.y), abs(agent.x - ne.x))
             enemy_dir_1[2] = 1.0 if dist1 == 1 else 0.0
             enemy_dir_1[3] = 1.0 if dist1 <= agent.attack_range else 0.0
-            # ranged_aligned: 같은 행/열에 있고 사거리 내이면 1.0 (딜러 자동조준 힌트)
-            if agent.attack_range > 1 and (ne.y == agent.y or ne.x == agent.x) and dist1 <= agent.attack_range:
-                enemy_dir_1[4] = 1.0
+            # ranged_aligned: 적이 같은 행 또는 같은 열에 있고 사거리 내이면 1.0
+            if agent.attack_range > 1:
+                aligned = 1.0 if (ne.y == agent.y or ne.x == agent.x) and dist1 <= agent.attack_range else 0.0
+            else:
+                aligned = 0.0
+            enemy_dir_1[4] = aligned
 
         # 2번째 가까운 적 방향
         enemy_dir_2 = np.zeros(5, dtype=np.float32)
@@ -344,11 +349,14 @@ class BattleRoyaleEnv(BaseBattleEnv):
             _, se = enemies[1]
             enemy_dir_2[0] = (se.y - agent.y) / max_dim
             enemy_dir_2[1] = (se.x - agent.x) / max_dim
-            dist2 = abs(agent.y - se.y) + abs(agent.x - se.x)
+            dist2 = max(abs(agent.y - se.y), abs(agent.x - se.x))
             enemy_dir_2[2] = 1.0 if dist2 == 1 else 0.0
             enemy_dir_2[3] = 1.0 if dist2 <= agent.attack_range else 0.0
-            if agent.attack_range > 1 and (se.y == agent.y or se.x == agent.x) and dist2 <= agent.attack_range:
-                enemy_dir_2[4] = 1.0
+            if agent.attack_range > 1:
+                aligned2 = 1.0 if (se.y == agent.y or se.x == agent.x) and dist2 <= agent.attack_range else 0.0
+            else:
+                aligned2 = 0.0
+            enemy_dir_2[4] = aligned2
 
         # 팀원 정보: [alive, hp, dy, dx, role_encoded]
         teammate_info = np.zeros(5, dtype=np.float32)
@@ -411,12 +419,26 @@ class BattleRoyaleEnv(BaseBattleEnv):
         cfg = self._role_reward_cfgs.get(agent.role, self.reward_cfg)
         dealt_damage_this_step = False
 
+        # 힐러 솔로 전투 증폭 (팀원 전원 사망 시)
+        healer_solo = False
+        if agent.role == ROLE_HEALER:
+            teammate_alive = any(
+                o.alive for o in self.agents
+                if o.agent_id != agent_idx and agent.is_teammate(o)
+            )
+            healer_solo = not teammate_alive
+
         rd = {}  # reward_details
+
+        # 현재 적까지 거리 (attack_miss 스케일링, approach 보상 등에서 공용)
+        curr_dist = self._get_nearest_enemy_dist(agent_idx)
 
         for event in events:
             if isinstance(event, tuple) and event[0] == "damage_dealt":
                 _, value = event
                 r = cfg["damage_dealt"]
+                if healer_solo:
+                    r *= 3.0  # 솔로 힐러: 전투 보상 3배
                 reward += r
                 rd["damage_dealt"] = rd.get("damage_dealt", 0.0) + r
                 dealt_damage_this_step = True
@@ -440,6 +462,8 @@ class BattleRoyaleEnv(BaseBattleEnv):
                 rd["heal_ally"] = rd.get("heal_ally", 0.0) + r
             elif event == "kill":
                 r = cfg["kill"]
+                if healer_solo:
+                    r *= 1.5  # 솔로 힐러: 킬 보상 1.5배
                 reward += r
                 rd["kill"] = rd.get("kill", 0.0) + r
             elif event == "death":
@@ -463,7 +487,11 @@ class BattleRoyaleEnv(BaseBattleEnv):
                 reward += r
                 rd["wall_bump"] = r
             elif event == "attack_miss":
-                r = cfg.get("attack_miss", 0.0)
+                base_miss = cfg.get("attack_miss", 0.0)
+                if curr_dist != float("inf") and curr_dist <= agent.attack_range + 1:
+                    r = base_miss * 0.3  # 거의 닿을 뻔한 공격은 관대
+                else:
+                    r = base_miss         # 허공 공격은 풀 페널티
                 reward += r
                 rd["attack_miss"] = rd.get("attack_miss", 0.0) + r
             elif event == "ranged_miss":
@@ -513,13 +541,25 @@ class BattleRoyaleEnv(BaseBattleEnv):
 
         # 적 접근 보상
         approach_reward = cfg.get("approach_enemy", 0.0)
-        curr_dist = self._get_nearest_enemy_dist(agent_idx)
+        if healer_solo:
+            approach_reward = max(approach_reward, 0.3)  # 솔로 힐러: 탱커급 접근 보상
         prev_dist = getattr(self, "_prev_enemy_dist", curr_dist)
         if approach_reward != 0.0 and agent.alive:
             if prev_dist != float("inf") and curr_dist != float("inf"):
                 r = approach_reward * (prev_dist - curr_dist)
                 reward += r
                 rd["approach"] = r
+
+        # 근접 보너스: 공격 사거리 내 또는 3칸 이내 체류 보상
+        if approach_reward != 0.0 and agent.alive and curr_dist != float("inf"):
+            if curr_dist <= agent.attack_range:
+                proximity_bonus = approach_reward * 0.3
+                reward += proximity_bonus
+                rd["proximity"] = proximity_bonus
+            elif curr_dist <= 3:
+                proximity_bonus = approach_reward * 0.1
+                reward += proximity_bonus
+                rd["proximity"] = proximity_bonus
 
         # 체력 낮은 팀원 접근 보상 (힐러 전용)
         approach_teammate_reward = cfg.get("approach_teammate", 0.0)

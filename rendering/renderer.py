@@ -82,6 +82,8 @@ class PygameRenderer:
         # 보간용 상태 저장
         self._prev_positions = {}   # agent_id → (x, y)
         self._prev_hps = {}         # agent_id → hp
+        self._prev_alive = {}       # agent_id → alive(bool)
+        self._last_agents = []      # _save_state에서 alive 스냅샷 저장용
         self._paused = False        # 스페이스바 일시정지
         self._death_positions: dict[int, tuple[int, int]] = {}  # agent_id → 마지막 (x, y)
 
@@ -212,6 +214,9 @@ class PygameRenderer:
             # 1. 타일 렌더링
             self._draw_tiles(grid)
 
+            # 1.5. 시야 오버레이 (타일 위, 아이템/에이전트 아래)
+            self._draw_view_ranges(agents)
+
             # 2. 아이템 렌더링
             if item_manager and item_manager.enabled:
                 self._draw_items(item_manager)
@@ -262,6 +267,31 @@ class PygameRenderer:
         """다음 스텝 보간을 위해 현재 상태를 저장한다."""
         self._prev_positions = dict(positions)
         self._prev_hps = dict(hps)
+        self._prev_alive = {a.agent_id: a.alive for a in self._last_agents}
+
+    def _draw_view_ranges(self, agents):
+        """각 에이전트의 관측 시야를 팀 색상 반투명 오버레이로 표시."""
+        cs = self.cell_size
+        cell_surf = pygame.Surface((cs, cs), pygame.SRCALPHA)
+
+        for a in agents:
+            if not a.alive:
+                continue
+            view = getattr(a, "view_range", 9)
+            half = view // 2
+
+            # 팀 색상 + 낮은 알파
+            team_colors = TEAM_COLORS.get(a.team_id, [(150, 150, 150)])
+            base_color = team_colors[0]
+            cell_surf.fill((*base_color, 30))
+
+            for dy in range(-half, half + 1):
+                for dx in range(-half, half + 1):
+                    gy = a.y + dy
+                    gx = a.x + dx
+                    if not (0 <= gy < self.map_height and 0 <= gx < self.map_width):
+                        continue
+                    self.screen.blit(cell_surf, (gx * cs, gy * cs))
 
     def _draw_tiles(self, grid):
         cs = self.cell_size
@@ -345,28 +375,13 @@ class PygameRenderer:
         return str(agent.agent_id)
 
     def _draw_agents(self, agents):
+        self._last_agents = agents
         cs = self.cell_size
         for a in agents:
-            # 사망 위치 기록
+            # 사망 상태는 맵에서 숨기고(패널에서만 표시), 리스폰 시에만 다시 보인다.
             if not a.alive:
-                if a.agent_id not in self._death_positions:
-                    self._death_positions[a.agent_id] = (a.x, a.y)
-                # 사망 마커 표시
-                dx, dy = self._death_positions[a.agent_id]
-                px_x = dx * cs
-                px_y = dy * cs
-                if self._dead_sprite:
-                    self.screen.blit(self._dead_sprite, (px_x, px_y))
-                else:
-                    cx = px_x + cs // 2
-                    cy = px_y + cs // 2
-                    xm = int(6 * self.scale)
-                    lw = max(2, int(3 * self.scale))
-                    pygame.draw.line(self.screen, (150, 50, 50),
-                                     (cx - xm, cy - xm), (cx + xm, cy + xm), lw)
-                    pygame.draw.line(self.screen, (150, 50, 50),
-                                     (cx + xm, cy - xm), (cx - xm, cy + xm), lw)
                 continue
+            self._death_positions.pop(a.agent_id, None)
 
             cx = a.x * cs + cs // 2
             cy = a.y * cs + cs // 2
@@ -404,33 +419,20 @@ class PygameRenderer:
 
     def _draw_agents_interpolated(self, agents, curr_positions, curr_hps, t):
         """보간된 위치와 HP로 에이전트를 그린다."""
+        self._last_agents = agents
         cs = self.cell_size
         for a in agents:
-            # 사망 마커 처리
+            # 사망 상태는 맵에서 숨기고(패널에서만 표시), 리스폰 시에만 다시 보인다.
             if not a.alive:
-                if a.agent_id not in self._death_positions:
-                    self._death_positions[a.agent_id] = (a.x, a.y)
-                dx, dy = self._death_positions[a.agent_id]
-                px_x = dx * cs
-                px_y = dy * cs
-                if self._dead_sprite:
-                    self.screen.blit(self._dead_sprite, (px_x, px_y))
-                else:
-                    cx = px_x + cs // 2
-                    cy = px_y + cs // 2
-                    xm = int(6 * self.scale)
-                    lw = max(2, int(3 * self.scale))
-                    pygame.draw.line(self.screen, (150, 50, 50),
-                                     (cx - xm, cy - xm), (cx + xm, cy + xm), lw)
-                    pygame.draw.line(self.screen, (150, 50, 50),
-                                     (cx + xm, cy - xm), (cx - xm, cy + xm), lw)
                 continue
+            self._death_positions.pop(a.agent_id, None)
 
             aid = a.agent_id
             curr_x, curr_y = curr_positions[aid]
+            was_dead = self._prev_alive.get(aid, False) is False and aid in self._prev_alive
 
             # 이전 위치가 있으면 보간, 없으면 (첫 프레임) 현재 위치 사용
-            if aid in self._prev_positions:
+            if aid in self._prev_positions and not was_dead:
                 prev_x, prev_y = self._prev_positions[aid]
                 draw_x = _lerp(prev_x, curr_x, t)
                 draw_y = _lerp(prev_y, curr_y, t)
@@ -438,7 +440,7 @@ class PygameRenderer:
                 draw_x, draw_y = float(curr_x), float(curr_y)
 
             # HP 보간
-            if aid in self._prev_hps:
+            if aid in self._prev_hps and not was_dead:
                 draw_hp = _lerp(self._prev_hps[aid], curr_hps[aid], t)
             else:
                 draw_hp = float(curr_hps[aid])

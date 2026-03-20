@@ -17,20 +17,23 @@ REWARD_KEYS = [
     "heal_ally", "ranged_miss", "invalid_action",
     "team_win", "team_eliminated", "teammate_death",
     "approach_teammate",
+    "proximity",
 ]
 
 # 넥서스 모드 보상 요소 이름 목록
 NEXUS_REWARD_KEYS = [
     "kill", "death", "damage_dealt", "item_pickup",
     "survival", "idle", "wall_bump", "attack_miss",
-    "combo", "no_combat", "approach", "oscillation",
+    "combo", "no_combat", "approach", "approach_minion", "flee", "oscillation",
+    "low_hp_combat",
+    "hit_and_run_disengage",
     "heal_ally", "ranged_miss", "invalid_action",
     "teammate_death", "approach_teammate",
     "attack_cooldown", "heal_cooldown",
-    # 넥서스 모드 전용
+    # 여기부터 넥서스 모드 전용
     "nexus_damage", "own_nexus_damaged",
     "nexus_destroyed_win", "nexus_destroyed_loss",
-    "approach_nexus", "defend_nexus",
+    "approach_nexus", "adjacent_enemy_nexus", "defend_nexus", "stay_near_own_nexus",
     "timeout_advantage", "timeout_disadvantage",
     "minion_kill",
 ]
@@ -80,6 +83,30 @@ class BattleRoyaleCallback(BaseCallback):
                     my_team = agents_info[0].get("team_id", 0)
                     if winning_team is not None and winning_team == my_team:
                         self.win_count += 1
+
+                # 이 에피소드(게임 한 판) 결과 간단 출력
+                if self.verbose:
+                    # 팀0(학습 에이전트 팀) 기준 kill/death/heal 평균
+                    team0_kills = 0
+                    team0_deaths = 0
+                    team0_heals = 0
+                    team0_count = 0
+                    if agents_info:
+                        my_team = agents_info[0].get("team_id", 0)
+                        for a in agents_info:
+                            if a.get("team_id", 0) == my_team:
+                                team0_count += 1
+                                team0_kills += a.get("kills", 0)
+                                team0_deaths += a.get("death_count", 0)
+                                team0_heals += a.get("heal_count", 0)
+                    avg_k = team0_kills / team0_count if team0_count > 0 else 0.0
+                    avg_d = team0_deaths / team0_count if team0_count > 0 else 0.0
+                    avg_h = team0_heals / team0_count if team0_count > 0 else 0.0
+
+                    print(f"{self._role_prefix}Episode {self.episode_count}: "
+                          f"reward={ep_reward:.2f}, steps={ep_length}, "
+                          f"avgK={avg_k:.2f}, avgD={avg_d:.2f}, avgH={avg_h:.2f}, "
+                          f"winning_team={winning_team}")
 
                 # 보상 요소별 TensorBoard 기록
                 for k in REWARD_KEYS:
@@ -288,13 +315,15 @@ class NexusBattleCallback(BaseCallback):
                 # 100 에피소드마다 통계 출력
                 if self.episode_count % 100 == 0 and self.verbose:
                     recent = self.episode_rewards[-100:]
+                    recent_len = self.episode_lengths[-100:]
                     win_rate = self.win_count / self.episode_count
                     print(f"\n{self._role_prefix}[Episode {self.episode_count}] "
+                          f"Total steps: {self.n_calls:,} | "
                           f"Avg Reward: {np.mean(recent):.2f} | "
                           f"Win Rate: {win_rate:.2%} | "
-                          f"Avg Length: {np.mean(self.episode_lengths[-100:]):.0f}")
+                          f"Avg Length: {np.mean(recent_len):.0f} (min={min(recent_len):.0f} max={max(recent_len):.0f})")
 
-                    # 넥서스 모드 핵심 지표
+                    # 넥서스 모드 핵심 지표 (전투/넥서스)
                     key_metrics = [
                         "kill", "death", "damage_dealt", "heal_ally",
                         "nexus_damage", "own_nexus_damaged",
@@ -312,12 +341,49 @@ class NexusBattleCallback(BaseCallback):
                     if parts:
                         print(f"  Rewards: {' | '.join(parts)}")
 
+                    # 접근/탐험 관련
+                    approach_metrics = ["approach_nexus", "approach", "approach_teammate"]
+                    approach_parts = []
+                    for k in approach_metrics:
+                        r100 = self._reward_history.get(k, [])[-100:]
+                        if r100 and np.mean(r100) != 0:
+                            approach_parts.append(f"{k}={np.mean(r100):+.2f}")
+                    if approach_parts:
+                        print(f"  Approach: {' | '.join(approach_parts)}")
+
+                    # 패널티 요약
+                    penalty_metrics = ["idle", "no_combat", "stay_near_own_nexus", "attack_miss", "ranged_miss", "wall_bump"]
+                    penalty_parts = []
+                    for k in penalty_metrics:
+                        r100 = self._reward_history.get(k, [])[-100:]
+                        if r100 and np.mean(r100) != 0:
+                            penalty_parts.append(f"{k}={np.mean(r100):+.2f}")
+                    if penalty_parts:
+                        print(f"  Penalties: {' | '.join(penalty_parts)}")
+
                     # 넥서스 HP 정보
                     nexuses_info = info.get("nexuses", [])
                     if nexuses_info:
                         hp_parts = [f"Team{n['team_id']}={n['hp']}/{n['max_hp']}"
                                     for n in nexuses_info]
                         print(f"  Nexus HP: {' | '.join(hp_parts)}")
+
+                    # 팀별 킬/사망 (마지막 완료 에피소드 기준)
+                    if agents_info:
+                        team_kills = {}
+                        team_deaths = {}
+                        for a in agents_info:
+                            tid = a.get("team_id", 0)
+                            team_kills[tid] = team_kills.get(tid, 0) + a.get("kills", 0)
+                            team_deaths[tid] = team_deaths.get(tid, 0) + a.get("death_count", 0)
+                        kill_parts = [f"Team{tid} K={team_kills[tid]}" for tid in sorted(team_kills)]
+                        death_parts = [f"Team{tid} D={team_deaths[tid]}" for tid in sorted(team_deaths)]
+                        print(f"  Kills: {' | '.join(kill_parts)}  Deaths: {' | '.join(death_parts)}")
+
+                    # 미니언 생존 수 (마지막 에피소드 기준)
+                    minions_alive = info.get("minions_alive", None)
+                    if minions_alive is not None:
+                        print(f"  Minions alive (end): {minions_alive}")
 
                 self.logger.record("nexus/episode_reward", ep_reward)
                 self.logger.record("nexus/episode_length", ep_length)

@@ -48,7 +48,7 @@ class NexusBattleEnv(BaseBattleEnv):
         nearest_enemy = 4     # dy, dx, adjacent, in_range
         second_enemy = 4
         teammate_1 = 5        # alive, hp, dy, dx, role_encoded
-        teammate_2 = 5        # 팀원이 2명
+        teammate_2 = 5        # 팀원이 5명
         game_state = 3        # alive_enemy_ratio, alive_ally_ratio, visible_enemies
         nexus_info = 4        # own_hp, enemy_hp, own_dy, own_dx
         respawn_info = 2      # timer, death_count
@@ -106,7 +106,9 @@ class NexusBattleEnv(BaseBattleEnv):
             self.nexuses.append(Nexus(team_id, nx, ny, self.config))
 
         # 에이전트 배치 — 각 팀 넥서스 근처에 스폰
-        # 역할 강제 배정: 팀당 탱커 1 + 딜러 1 + 힐러 1
+        # 역할 강제 배정:
+        #   - 기본 3명은 탱커/딜러/힐러 1명씩
+        #   - 나머지(예: 팀당 2명)는 역할 랜덤
         self.agents = []
         agent_id = 0
         for team_id in range(2):
@@ -117,16 +119,33 @@ class NexusBattleEnv(BaseBattleEnv):
             )
             # 역할 배정
             if self.learning_role and team_id == 0:
-                # 멀티 정책: agent 0는 learning_role 고정
-                other_roles = [r for r in ALL_ROLES if r != self.learning_role]
-                self.rng.shuffle(other_roles)
-                team_role_list = [self.learning_role] + list(other_roles[:2])
+                # 멀티 정책: 팀0의 첫 에이전트는 learning_role 고정,
+                # 나머지 두 기본 역할은 나머지 역할에서 선택
+                core_roles = [self.learning_role] + [r for r in ALL_ROLES if r != self.learning_role][:2]
             else:
-                team_role_list = list(ALL_ROLES)  # [tank, dealer, healer]
-                self.rng.shuffle(team_role_list)
+                # 탱커/딜러/힐러 1명씩
+                core_roles = list(ALL_ROLES)
+            # 나머지 두 명은 역할 셔플링
+            self.rng.shuffle(core_roles)
+
+            team_role_list = []
+            # 앞 3명: 탱커/딜러/힐러 각 1명씩 (순서는 랜덤)
+            team_role_list.extend(core_roles[:3])
+            # 남은 인원: 역할 랜덤 샘플링
+            extra = self.agents_per_team - 3
+            if extra > 0:
+                for _ in range(extra):
+                    team_role_list.append(self.rng.choice(ALL_ROLES))
 
             for idx, (y, x) in enumerate(positions):
-                role = team_role_list[idx]
+                # 멀티 정책: team0의 agent0(인덱스 0)은 learning_role을 강제한다.
+                # (기존 코드에서는 core_roles를 shuffle한 뒤 idx별로 role을 배정해서
+                #  agent0이 learning_role이 아닐 때가 생겼고, 이 경우 agent0의
+                #  action_space/보상/invalid_action이 어긋날 수 있다.)
+                if self.learning_role and team_id == 0 and idx == 0:
+                    role = self.learning_role
+                else:
+                    role = team_role_list[idx]
                 self.agents.append(
                     Agent(agent_id, x, y, self.config, role=role, team_id=team_id)
                 )
@@ -397,7 +416,15 @@ class NexusBattleEnv(BaseBattleEnv):
                         for e in self._step_events[i]
                     )
                     if already_hit:
-                        continue
+                        # 마무리 구간에서는 넥서스를 우선 타격하도록 예외 허용
+                        thr = float(
+                            self.config.get("reward", {}).get(
+                                "finisher_enemy_nexus_hp_threshold", 0.25
+                            )
+                        )
+                        hp_ratio = nexus.hp / max(nexus.max_hp, 1)
+                        if hp_ratio > thr:
+                            continue
 
                     actual_dmg = nexus.take_damage(agent.attack)
                     self._step_events[i].append(("nexus_damage", actual_dmg))
@@ -460,6 +487,10 @@ class NexusBattleEnv(BaseBattleEnv):
     def _process_minion_actions(self):
         """모든 살아있는 미니언의 규칙 기반 AI 행동을 실행한다."""
         self._own_nexus_damaged_this_step = False
+
+        # 미니언 이동 속도 더 감소: 3스텝에 한 번만 이동/공격 처리
+        if self.current_step % 3 != 0:
+            return
 
         for minion in self.minions:
             if not minion.alive:
@@ -687,7 +718,130 @@ class NexusBattleEnv(BaseBattleEnv):
         ])
         return obs
 
+    # ─────────────────── 정책 정규화 (진영 대칭) ─────────────────────────
+
+    def transform_obs_for_policy(self, agent_idx: int, obs: np.ndarray) -> np.ndarray:
+        """Team1(레드)이 Team0과 같은 좌표계로 보이도록 관측을 180도 회전/부호 반전한다.
+
+        - local_map(view×view×5): 180도 회전 (상하/좌우 뒤집기)
+        - dy/dx 형태의 상대 좌표: 부호 반전
+        """
+        if not getattr(self, "_policy_team_normalize", False):
+            return obs
+        if agent_idx < 0 or agent_idx >= len(self.agents):
+            return obs
+        agent = self.agents[agent_idx]
+        if getattr(agent, "team_id", 0) != 1:
+            return obs
+
+        view = self.view_range
+        num_channels = 5
+        grid_obs = view * view * num_channels
+
+        # 안전하게 복사
+        o = np.array(obs, copy=True)
+
+        # 1) 로컬 맵 180도 회전
+        lm = o[:grid_obs].reshape((view, view, num_channels))
+        lm = lm[::-1, ::-1, :]
+        o[:grid_obs] = lm.reshape(-1)
+
+        # 오프셋 계산 (NexusBattleEnv.__init__ 정의와 동일)
+        off = grid_obs
+        self_stats = 7
+        nearest_enemy = 4
+        second_enemy = 4
+        teammate = 5
+        game_state = 3
+        nexus_info = 4
+        respawn_info = 2
+        nearest_minion = 3
+
+        off_stats = off
+        off += self_stats
+        off_enemy1 = off
+        off += nearest_enemy
+        off_enemy2 = off
+        off += second_enemy
+        off_tm1 = off
+        off += teammate
+        off_tm2 = off
+        off += teammate
+        off_game = off
+        off += game_state
+        off_nexus = off
+        off += nexus_info
+        off_respawn = off
+        off += respawn_info
+        off_minion = off
+        off += nearest_minion
+
+        # 2) dy/dx 성분 부호 반전
+        # enemy_dir_1: [dy, dx, adjacent, in_range]
+        o[off_enemy1 + 0] *= -1.0
+        o[off_enemy1 + 1] *= -1.0
+        # enemy_dir_2
+        o[off_enemy2 + 0] *= -1.0
+        o[off_enemy2 + 1] *= -1.0
+        # teammate_1: [alive, hp, dy, dx, role]
+        o[off_tm1 + 2] *= -1.0
+        o[off_tm1 + 3] *= -1.0
+        # teammate_2
+        o[off_tm2 + 2] *= -1.0
+        o[off_tm2 + 3] *= -1.0
+        # nexus_info: [own_hp, enemy_hp, own_dy, own_dx]
+        o[off_nexus + 2] *= -1.0
+        o[off_nexus + 3] *= -1.0
+        # nearest_minion: [dy, dx, dist]
+        o[off_minion + 0] *= -1.0
+        o[off_minion + 1] *= -1.0
+
+        return o
+
+    def transform_action_from_policy(self, agent_idx: int, action: int) -> int:
+        """Team1(레드)이 낸 action을 환경 좌표계로 되돌린다 (180도 회전 역변환).
+
+        이동만 반전:
+          UP <-> DOWN, LEFT <-> RIGHT
+        나머지(공격/힐/대기/원거리 방향)는 동일하게 사용.
+        """
+        if not getattr(self, "_policy_team_normalize", False):
+            return action
+        if agent_idx < 0 or agent_idx >= len(self.agents):
+            return action
+        agent = self.agents[agent_idx]
+        if getattr(agent, "team_id", 0) != 1:
+            return action
+
+        if action == ACTION_UP:
+            return ACTION_DOWN
+        if action == ACTION_DOWN:
+            return ACTION_UP
+        if action == ACTION_LEFT:
+            return ACTION_RIGHT
+        if action == ACTION_RIGHT:
+            return ACTION_LEFT
+        return action
+
     # ─────────────────── 보상 ────────────────────────────────
+
+    def _enemy_agents_visible_in_view(self, agent_idx: int) -> int:
+        """시야(뷰 사각형) 안에 살아 있는 적 에이전트 수. `_get_observation`의 visible_enemies와 동일 기준."""
+        agent = self.agents[agent_idx]
+        if not agent.alive:
+            return 0
+        view = self.view_range
+        half = view // 2
+        cy, cx = agent.y, agent.x
+        n = 0
+        for other in self.agents:
+            if other.agent_id == agent_idx or not other.alive:
+                continue
+            if agent.is_teammate(other):
+                continue
+            if abs(other.y - cy) <= half and abs(other.x - cx) <= half:
+                n += 1
+        return n
 
     def _calculate_reward(self, agent_idx: int) -> float:
         """넥서스 모드 보상을 계산한다."""
@@ -709,8 +863,37 @@ class NexusBattleEnv(BaseBattleEnv):
             elif isinstance(event, tuple) and event[0] == "nexus_damage":
                 _, dmg = event
                 r = cfg.get("nexus_damage", 3.0)
+
+                # 넥서스 마무리(매우 낮은 HP)는 교전으로 취급하여
+                # no_combat 패널티 누적 때문에 넥서스를 포기하는 부작용을 줄인다.
+                fin_thr = float(cfg.get("finisher_enemy_nexus_hp_threshold", 0.25))
+                fin_mult = float(cfg.get("finisher_nexus_damage_multiplier", 1.0))
+                enemy_nexus = self.nexuses[1 - agent.team_id]
+                hp_ratio = enemy_nexus.hp / max(enemy_nexus.max_hp, 1)
+                if fin_mult != 1.0 and hp_ratio <= fin_thr:
+                    r *= fin_mult
                 reward += r
                 rd["nexus_damage"] = rd.get("nexus_damage", 0.0) + r
+                if hp_ratio <= fin_thr:
+                    dealt_damage_this_step = True
+
+            elif isinstance(event, tuple) and event[0] == "minion_kill":
+                _, mx, my = event
+                own_n = self.nexuses[agent.team_id]
+                # "아군 넥서스 근처에서" 처치 보너스 적용
+                minion_radius = int(cfg.get("minion_kill_nexus_radius", 3))
+                if own_n.alive:
+                    dist_to_own_nexus = abs(my - own_n.y) + abs(mx - own_n.x)
+                    if dist_to_own_nexus <= minion_radius:
+                        r = cfg.get("minion_kill_near_nexus", cfg.get("minion_kill", 0.0))
+                    else:
+                        r = cfg.get("minion_kill", 0.0)
+                else:
+                    r = cfg.get("minion_kill", 0.0)
+
+                reward += r
+                rd["minion_kill"] = rd.get("minion_kill", 0.0) + r
+                # 미니언 처치도 전투로 간주해서 no_combat 타이머 갱신
                 dealt_damage_this_step = True
 
             elif isinstance(event, tuple) and event[0] == "item_pickup":
@@ -793,6 +976,14 @@ class NexusBattleEnv(BaseBattleEnv):
                 reward += r
                 rd["heal_cooldown"] = rd.get("heal_cooldown", 0.0) + r
 
+        # 저체력인데 이번 스텝에 공격(딜)을 넣은 경우 패널티 → 후퇴·포션 유도
+        if agent.alive and dealt_damage_this_step:
+            thr = float(cfg.get("low_hp_combat_threshold", 0.0))
+            pen = float(cfg.get("low_hp_combat_penalty", 0.0))
+            if thr > 0.0 and pen != 0.0 and (agent.hp / max(agent.max_hp, 1)) < thr:
+                reward += pen
+                rd["low_hp_combat"] = rd.get("low_hp_combat", 0.0) + pen
+
         # 연속 공격 보너스
         if dealt_damage_this_step:
             self._last_combat_step = self.current_step
@@ -815,26 +1006,138 @@ class NexusBattleEnv(BaseBattleEnv):
 
         # 적 접근 보상
         if agent.alive:
+            visible_enemy_count = self._enemy_agents_visible_in_view(agent_idx)
             approach_reward = cfg.get("approach_enemy", 0.05)
             curr_dist = self._get_nearest_enemy_dist(agent_idx)
             prev_dist = getattr(self, "_prev_enemy_dist", curr_dist)
+            dist_change = curr_dist - prev_dist
             if approach_reward != 0.0:
                 if prev_dist != float("inf") and curr_dist != float("inf"):
                     r = approach_reward * (prev_dist - curr_dist)
+                    if visible_enemy_count > 0:
+                        vm = float(cfg.get("visible_enemy_approach_mult", 1.0))
+                        r *= vm
+                    # 치고 빠지기 모드(연속으로 때리는 중)에서는
+                    # 후퇴로 인해 `approach_enemy`가 크게 깎이지 않도록 음수 방향을 중화한다.
+                    hr_thr = int(cfg.get("hit_and_run_consecutive_hits_threshold", 2))
+                    if (
+                        dealt_damage_this_step
+                        and self._consecutive_hits >= hr_thr
+                        and dist_change > 0
+                        and r < 0.0
+                    ):
+                        r = 0.0
                     reward += r
                     rd["approach"] = r
+
+            # 적팀 미니언 접근 보상 
+            approach_minion_reward = cfg.get("approach_minion", 0.0)
+            if approach_minion_reward != 0.0:
+                curr_minion_dist = float("inf")
+                for m in self.minions:
+                    if not m.alive or m.team_id == agent.team_id:
+                        continue
+                    d = abs(agent.y - m.y) + abs(agent.x - m.x)
+                    if d < curr_minion_dist:
+                        curr_minion_dist = d
+
+                prev_minion_dist = getattr(self, "_prev_enemy_minion_dist", curr_minion_dist)
+                if prev_minion_dist != float("inf") and curr_minion_dist != float("inf"):
+                    r = approach_minion_reward * (prev_minion_dist - curr_minion_dist)
+                    reward += r
+                    rd["approach_minion"] = r
+
+                # 다음 스텝을 위한 거리 갱신
+                self._prev_enemy_minion_dist = curr_minion_dist
+
+            # 저체력 도주 보너스: 체력이 낮을 때 적과의 거리를 벌리면 보상
+            flee_hp_threshold = cfg.get("flee_hp_threshold", 0.0)
+            flee_bonus = cfg.get("flee_bonus", 0.0)
+            if flee_bonus != 0.0 and (agent.hp / agent.max_hp) < flee_hp_threshold:
+                if prev_dist != float("inf") and curr_dist != float("inf"):
+                    dist_change = curr_dist - prev_dist
+                    if dist_change > 0:
+                        r = flee_bonus * dist_change
+                        if visible_enemy_count > 0:
+                            r *= float(cfg.get("flee_visible_mult", 1.0))
+                        reward += r
+                        rd["flee"] = rd.get("flee", 0.0) + r
+
+            # 치고 빠지기(무한 교전 억제): 연속으로 맞추는데도 거리가 늘지 않으면 패널티
+            # - 거리가 늘면(후퇴면) 보상
+            # - 시야에 적이 있을 때만 적용하여 넥서스 질주/전투 외 상황을 덜 방해
+            hr_thr = int(cfg.get("hit_and_run_consecutive_hits_threshold", 2))
+            hr_pen = float(cfg.get("hit_and_run_disengage_penalty", 0.0))
+            hr_rew = float(cfg.get("hit_and_run_disengage_reward", 0.0))
+            if (
+                dealt_damage_this_step
+                and visible_enemy_count > 0
+                and self._consecutive_hits >= hr_thr
+                and prev_dist != float("inf")
+                and curr_dist != float("inf")
+            ):
+                if dist_change > 0:
+                    if hr_rew != 0.0:
+                        reward += hr_rew
+                        rd["hit_and_run_disengage"] = rd.get("hit_and_run_disengage", 0.0) + hr_rew
+                else:
+                    if hr_pen != 0.0:
+                        reward += hr_pen
+                        rd["hit_and_run_disengage"] = rd.get("hit_and_run_disengage", 0.0) + hr_pen
+
+            # 다음 스텝 거리 변화 계산을 위해 갱신
+            self._prev_enemy_dist = curr_dist
 
             # 적 넥서스 접근 보상
             approach_nexus = cfg.get("approach_enemy_nexus", 0.05)
             if approach_nexus != 0.0:
+                own_n = self.nexuses[agent.team_id]
+                own_ratio = (own_n.hp / max(own_n.max_hp, 1)) if own_n.alive else 0.0
+                own_low_thr = float(cfg.get("own_nexus_low_hp_threshold", 0.35))
+                own_low_mult = float(cfg.get("own_nexus_low_approach_enemy_nexus_mult", 0.15))
                 en = self.nexuses[1 - agent.team_id]
                 if en.alive:
                     curr_n_dist = abs(agent.y - en.y) + abs(agent.x - en.x)
                     prev_n_dist = getattr(self, "_prev_nexus_dist", curr_n_dist)
                     r = approach_nexus * (prev_n_dist - curr_n_dist)
+                    if visible_enemy_count > 0:
+                        nm = float(cfg.get("visible_enemy_nexus_mult", 1.0))
+                        r *= nm
+                    if own_ratio <= own_low_thr:
+                        r *= own_low_mult
                     reward += r
                     rd["approach_nexus"] = r
                     self._prev_nexus_dist = curr_n_dist
+
+            # 적 넥서스 인접 유지 보상: 넥서스 앞까지 왔는데 타격을 못하는 현상 완화
+            adjacent_nexus_bonus = float(cfg.get("adjacent_enemy_nexus_bonus", 0.0))
+            if adjacent_nexus_bonus != 0.0:
+                own_n = self.nexuses[agent.team_id]
+                own_ratio = (own_n.hp / max(own_n.max_hp, 1)) if own_n.alive else 0.0
+                own_low_thr = float(cfg.get("own_nexus_low_hp_threshold", 0.35))
+                own_low_mult = float(cfg.get("own_nexus_low_approach_enemy_nexus_mult", 0.15))
+                en = self.nexuses[1 - agent.team_id]
+                if en.alive:
+                    dist_to_enemy_nexus = abs(agent.y - en.y) + abs(agent.x - en.x)
+                    if dist_to_enemy_nexus == 1:
+                        bonus = adjacent_nexus_bonus
+                        if own_ratio <= own_low_thr:
+                            bonus *= own_low_mult
+                        reward += bonus
+                        rd["adjacent_enemy_nexus"] = rd.get("adjacent_enemy_nexus", 0.0) + bonus
+
+            # 내 넥서스가 부실할 때(수비 필요): 내 넥서스에서 너무 멀어지면 페널티
+            own_n = self.nexuses[agent.team_id]
+            own_ratio = (own_n.hp / max(own_n.max_hp, 1)) if own_n.alive else 0.0
+            if agent.alive and own_ratio <= float(cfg.get("own_nexus_low_hp_threshold", 0.35)):
+                dist_to_own = abs(agent.y - own_n.y) + abs(agent.x - own_n.x)
+                stay_radius = int(cfg.get("stay_near_radius", 4))
+                excess = dist_to_own - stay_radius
+                if excess > 0:
+                    pen_per_tile = float(cfg.get("own_nexus_low_far_penalty_per_tile", -0.04))
+                    pen = pen_per_tile * excess
+                    reward += pen
+                    rd["own_nexus_low_far"] = rd.get("own_nexus_low_far", 0.0) + pen
 
             # 힐러 팀원 접근 보상
             approach_tm = cfg.get("approach_teammate", 0.0)
@@ -846,6 +1149,21 @@ class NexusBattleEnv(BaseBattleEnv):
                     if r != 0.0:
                         reward += r
                         rd["approach_teammate"] = r
+
+            # 자기 넥서스 근처에만 머무르는 패널티 (적이 멀리 있을 때)
+            stay_penalty = cfg.get("stay_near_own_nexus_penalty", 0.0)
+            if stay_penalty != 0.0:
+                own_n = self.nexuses[agent.team_id]
+                dist_to_own = abs(agent.y - own_n.y) + abs(agent.x - own_n.x)
+                own_ratio = (own_n.hp / max(own_n.max_hp, 1)) if own_n.alive else 0.0
+                own_low_thr = float(cfg.get("own_nexus_low_hp_threshold", 0.35))
+                stay_radius = int(cfg.get("stay_near_radius", 4))
+                enemy_dist = self._get_nearest_enemy_dist(agent_idx)
+                enemy_far_threshold = int(cfg.get("stay_near_enemy_far", 6))
+                # 내 넥서스가 부실하면 '농성' 패널티를 끄고 복귀를 유도한다.
+                if own_ratio > own_low_thr and dist_to_own <= stay_radius and enemy_dist > enemy_far_threshold:
+                    reward += stay_penalty
+                    rd["stay_near_own_nexus"] = stay_penalty
 
             # 넥서스 방어 보상 (아군 넥서스 근처에 있을 때)
             defend_bonus = cfg.get("defend_nexus_bonus", 0.0)
