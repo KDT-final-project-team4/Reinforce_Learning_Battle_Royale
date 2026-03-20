@@ -400,6 +400,7 @@ class BaseBattleEnv(gym.Env):
 
                     if not target.alive:
                         agent.kills += 1
+                        agent.kills_enemy_agents += 1
                         target.death_step = self.current_step
                         self._step_events[i].append("kill")
                         self._step_events[target.agent_id].append("death")
@@ -425,6 +426,10 @@ class BaseBattleEnv(gym.Env):
 
                 if not minion_target.alive:
                     agent.kills += 1
+                    agent.kills_enemy_minions += 1
+                    # 넥서스 모드용 미니언 킬 보상 이벤트
+                    # (nexus_env 보상 계산에서 사용)
+                    self._step_events[i].append(("minion_kill", minion_target.x, minion_target.y))
                     self._render_events.append({
                         "type": "death", "x": minion_target.x, "y": minion_target.y,
                     })
@@ -458,6 +463,7 @@ class BaseBattleEnv(gym.Env):
 
                     if not target.alive:
                         agent.kills += 1
+                        agent.kills_enemy_agents += 1
                         target.death_step = self.current_step
                         self._step_events[i].append("kill")
                         self._step_events[target.agent_id].append("death")
@@ -486,6 +492,10 @@ class BaseBattleEnv(gym.Env):
 
                 if not minion_target.alive:
                     agent.kills += 1
+                    agent.kills_enemy_minions += 1
+                    # 넥서스 모드용 미니언 킬 보상 이벤트
+                    # (nexus_env 보상 계산에서 사용)
+                    self._step_events[i].append(("minion_kill", minion_target.x, minion_target.y))
                     self._render_events.append({
                         "type": "death", "x": minion_target.x, "y": minion_target.y,
                     })

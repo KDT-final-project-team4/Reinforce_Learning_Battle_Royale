@@ -34,6 +34,8 @@ class Agent:
 
         self.alive = True
         self.kills = 0
+        self.kills_enemy_agents = 0   # 에피소드 내 적 플레이어(에이전트) 처치
+        self.kills_enemy_minions = 0  # 에피소드 내 적 미니언 처치
         self.items_collected = 0
         self.attack_count = 0
         self.attack_hits = 0

@@ -24,14 +24,16 @@ REWARD_KEYS = [
 NEXUS_REWARD_KEYS = [
     "kill", "death", "damage_dealt", "item_pickup",
     "survival", "idle", "wall_bump", "attack_miss",
-    "combo", "no_combat", "approach", "flee", "oscillation",
+    "combo", "no_combat", "approach", "approach_minion", "flee", "oscillation",
+    "low_hp_combat",
+    "hit_and_run_disengage",
     "heal_ally", "ranged_miss", "invalid_action",
     "teammate_death", "approach_teammate",
     "attack_cooldown", "heal_cooldown",
-    # 넥서스 모드 전용
+    # 여기부터 넥서스 모드 전용
     "nexus_damage", "own_nexus_damaged",
     "nexus_destroyed_win", "nexus_destroyed_loss",
-    "approach_nexus", "defend_nexus", "stay_near_own_nexus",
+    "approach_nexus", "adjacent_enemy_nexus", "defend_nexus", "stay_near_own_nexus",
     "timeout_advantage", "timeout_disadvantage",
     "minion_kill",
 ]

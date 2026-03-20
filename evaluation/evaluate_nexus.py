@@ -7,6 +7,10 @@ import sys
 import numpy as np
 import yaml
 from stable_baselines3 import PPO
+try:
+    from tqdm import trange
+except Exception:
+    trange = None
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,13 +22,15 @@ from env.base_env import ROLE_ACTION_MAP
 NEXUS_REWARD_KEYS = [
     "kill", "death", "damage_dealt", "item_pickup",
     "survival", "idle", "wall_bump", "attack_miss",
-    "combo", "no_combat", "approach", "flee", "oscillation",
+    "combo", "no_combat", "approach", "approach_minion", "flee", "oscillation",
+    "low_hp_combat",
+    "hit_and_run_disengage",
     "heal_ally", "ranged_miss", "invalid_action",
     "teammate_death", "approach_teammate",
     "attack_cooldown", "heal_cooldown",
     "nexus_damage", "own_nexus_damaged",
     "nexus_destroyed_win", "nexus_destroyed_loss",
-    "approach_nexus", "defend_nexus", "stay_near_own_nexus",
+    "approach_nexus", "adjacent_enemy_nexus", "defend_nexus", "stay_near_own_nexus",
     "timeout_advantage", "timeout_disadvantage",
     "minion_kill",
 ]
@@ -92,7 +98,13 @@ def evaluate(args):
     print(f"Seed: {args.seed}")
     print()
 
-    for ep in range(episodes):
+    # 진행도 표시: tqdm이 없으면 일반 range로 폴백
+    if args.no_progress or trange is None:
+        episode_iter = range(episodes)
+    else:
+        episode_iter = trange(episodes, desc="Evaluating", unit="ep")
+
+    for ep in episode_iter:
         obs, info = env.reset(seed=args.seed)
         done = False
         ep_reward = 0.0
@@ -202,11 +214,11 @@ def evaluate(args):
     print(f"Win Rate: {win_count / episodes:.2%}")
     print(f"Avg Reward: {np.mean(episode_rewards):.2f} ± {np.std(episode_rewards):.2f}")
     print(f"Avg Steps: {np.mean(episode_lengths):.1f}")
-    print(f"\n--- Reward Breakdown (last 100 episodes) ---")
+    print(f"\n--- Reward Breakdown (all episodes) ---")
     for k in NEXUS_REWARD_KEYS:
-        recent = reward_history[k][-100:]
-        if recent and np.mean(recent) != 0:
-            print(f"  {k:>25s}: {np.mean(recent):+.3f}")
+        values = reward_history[k]
+        if values and np.mean(values) != 0:
+            print(f"  {k:>25s}: {np.mean(values):+.3f}")
 
     env.close()
 
@@ -228,6 +240,7 @@ def main():
     parser.add_argument("--config", type=str, default="config/nexus_mode.yaml")
     parser.add_argument("--episodes", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--no-progress", action="store_true", help="진행도 바 비활성화")
     args = parser.parse_args()
     evaluate(args)
 
