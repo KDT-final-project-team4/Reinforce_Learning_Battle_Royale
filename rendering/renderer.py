@@ -215,7 +215,7 @@ class PygameRenderer:
             self._draw_tiles(grid)
 
             # 1.5. 시야 오버레이 (타일 위, 아이템/에이전트 아래)
-            self._draw_view_ranges(agents)
+            # self._draw_view_ranges(agents)
 
             # 2. 아이템 렌더링
             if item_manager and item_manager.enabled:
