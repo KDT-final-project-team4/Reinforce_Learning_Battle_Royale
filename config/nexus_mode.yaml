@@ -107,7 +107,7 @@ reward:
   # 행동
   # 적/넥서스 접근 보상은 너무 크면 \"한 대 치고 이동\" 패턴이 강화되므로 완만하게 유지
   approach_enemy_nexus: 0.24
-  approach_enemy: 1.35
+  approach_enemy: 1.46
   approach_minion: 0.38
   approach_teammate: 0.0
   defend_nexus_bonus: 0.98    # 우리 넥서스/팀원 방어 기여 강화
@@ -119,20 +119,21 @@ reward:
   own_nexus_low_hp_threshold: 0.6
   own_nexus_low_approach_enemy_nexus_mult: 0.03
   own_nexus_low_far_penalty_per_tile: -0.16
-  idle_penalty: -0.12                 # 가만히 있는 것에 대한 패널티
+  idle_penalty: -0.14                 # 이동·교전 유지
   wall_bump: -0.1
   attack_miss: -0.2
   ranged_miss: -0.1
   invalid_action: -0.1
   oscillation_penalty: -0.05
-  flee_hp_threshold: 0.52     # 이 비율 미만이면 도주(거리 증가) 보상
-  flee_bonus: 2.0             # 저체력에서 후퇴 유인 강하게
-  flee_visible_mult: 2.55     # 시야에 적이 있을 때 후퇴 보상 추가 가중(치고 빠지기)
-  # 저체력인데 공격을 넣으면 패널티(무리한 맞교환 억제)
-  low_hp_combat_threshold: 0.38
-  low_hp_combat_penalty: -1.32
+  # 체력이 많을 땐 후퇴 보너스 비활성에 가깝게 → 오래 움직이며 교전
+  flee_hp_threshold: 0.34
+  flee_bonus: 2.75
+  flee_visible_mult: 3.15
+  # 저체력 맞짱 억제(후퇴·포션 쪽). flee 임계와 맞춰 위험 구간에서만 강하게 작동
+  low_hp_combat_threshold: 0.34
+  low_hp_combat_penalty: -1.05
   # 시야 안에 적 에이전트가 있을 때: 적 쪽 유인↑, 적 넥서스만 향하는 유인↓
-  visible_enemy_approach_mult: 2.0
+  visible_enemy_approach_mult: 2.18
   visible_enemy_nexus_mult: 0.065
   adjacent_enemy_nexus_bonus: 0.22
   # 넥서스가 매우 낮을 때(마무리)는 넥서스 타격을 더 유리하게 만든다.
@@ -143,16 +144,16 @@ reward:
   no_combat_penalty: -10.4
   no_combat_threshold: 16 # 살짝 완화: 과도한 no_combat 누적 완화
   survival_per_step: 0.03 # 살아남는 것에 소량 보상 (생존 우선도 약간 증가)
-  combo_bonus: 0.0        # 연속 공격(콤보) 자체 보상 제거
+  combo_bonus: 0.14
   # 치고 빠지기(무한 교전 억제)
    
   hit_and_run_consecutive_hits_threshold: 2
   
   # ==== 양방향 shaping ====
   # 연속으로 데미지를 넣는데도 거리(dist)가 늘지 않으면 패널티
-  hit_and_run_disengage_penalty: -0.95
+  hit_and_run_disengage_penalty: -0.72
   # 연속으로 공격 중 데미지를 넓히면 보상
-  hit_and_run_disengage_reward: 0.58
+  hit_and_run_disengage_reward: 0.66
   # 쿨다운(공격이나 힐을 계속 시도하는 것에 대한 패널티)
   attack_cooldown_penalty: -1.5   # 쿨다운 타이밍 실수 패널티 완화
   heal_cooldown_penalty: -2.0
@@ -166,12 +167,12 @@ role_rewards:
   tank:
     defend_nexus_bonus: 1.05
     damage_dealt: 2.75
-    combo_bonus: 0.0
-    flee_bonus: 2.45
-    flee_visible_mult: 2.75
+    combo_bonus: 0.16
+    flee_bonus: 3.05
+    flee_visible_mult: 3.25
     item_pickup: 14.0
     approach_enemy_nexus: 0.72
-    approach_enemy: 3.2
+    approach_enemy: 3.35
     nexus_damage: 10.8
     approach_minion: 0.6
     minion_kill: 2.5
@@ -180,19 +181,19 @@ role_rewards:
     no_combat_threshold: 19
     attack_cooldown_penalty: -0.4
     attack_miss: -0.05
-    visible_enemy_approach_mult: 2.65
+    visible_enemy_approach_mult: 2.78
     visible_enemy_nexus_mult: 0.065
     adjacent_enemy_nexus_bonus: 0.34
   dealer:
     nexus_damage: 12.0
     approach_enemy_nexus: 0.92
-    approach_enemy: 3.5
+    approach_enemy: 3.65
     damage_dealt: 3.5
-    combo_bonus: 0.0
-    flee_bonus: 2.75
-    flee_visible_mult: 3.0
-    low_hp_combat_penalty: -1.4
-    visible_enemy_approach_mult: 2.55
+    combo_bonus: 0.14
+    flee_bonus: 3.15
+    flee_visible_mult: 3.4
+    low_hp_combat_penalty: -1.08
+    visible_enemy_approach_mult: 2.72
     visible_enemy_nexus_mult: 0.1
     ranged_miss: -0.02
     attack_miss: -0.05
@@ -207,11 +208,13 @@ role_rewards:
     heal_ally: 12.5
     heal_low_hp_ally: 16.0
     death: -8.0
-    low_hp_combat_penalty: -0.75
-    visible_enemy_approach_mult: 1.55
+    low_hp_combat_penalty: -0.55
+    visible_enemy_approach_mult: 1.72
     visible_enemy_nexus_mult: 0.3
-    flee_bonus: 1.95
-    flee_visible_mult: 2.35
+    flee_hp_threshold: 0.38
+    flee_bonus: 2.55
+    flee_visible_mult: 3.05
+    combo_bonus: 0.1
     approach_teammate: 1.5
     approach_minion: 0.12
     minion_kill: 1.4
@@ -221,16 +224,17 @@ role_rewards:
     no_combat_threshold: 30
     adjacent_enemy_nexus_bonus: 0.35
     
+# ~2시간 예산: 라운드↓·역할당 스텝↑ (PC 성능에 따라 steps_per_round / n_envs 조절)
 training:
   algorithm: "PPO"
   multi_policy: true
-  num_rounds: 5
-  steps_per_round: 30000
+  num_rounds: 3
+  steps_per_round: 100000
   total_timesteps: 30000000        
   learning_rate: 0.0001
   n_envs: 8                       
   self_play: true
-  opponent_update_interval: 150000
+  opponent_update_interval: 28000
   net_arch: [256, 256]            
   gamma: 0.999
   n_steps: 4096               
