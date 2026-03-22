@@ -84,14 +84,14 @@ game:
 
 reward:
   # 넥서스 관련
-  nexus_damage: 10.0          # 넥서스 타격 유인을 크게 증가 (에이전트와의 1:1 교전 이탈 유도)
-  own_nexus_damaged: -4.0     # 아군 넥서스 피격 패널티 강화 (수비 유도)
+  nexus_damage: 7.5           # 넥만 치기 완화 → 수비/교전 균형(승률 1차)
+  own_nexus_damaged: -9.2     # 계수 과열 완화(로그는 줄이되 수비 신호는 유지)
   nexus_destroyed_win: 30.0   # 승리
   nexus_destroyed_loss: -40.0 # 패배 패널티 강화 → 자기 넥서스 방치 억제
   # 전투
-  kill: 40.0             # 교전/킬 보상 강화
-  death: -15.0           # 죽음 패널티 더 강화 → 무리한 맞교환 억제
-  damage_dealt: 1.2      # 평상시 교전 유도 강화 (초반 과도한 소극성 완화)
+  kill: 108.0            # 교전/킬 보상 대폭 강화
+  death: -16.5           # 무리 맞교환 억제(본진 피해 완화)
+  damage_dealt: 3.55     # 평상시 교전 유도 강화 (킬 전 교전 유지)
   # 아이템
   item_pickup: 12.0
   low_hp_potion_bonus: 16.0
@@ -101,47 +101,47 @@ reward:
   heal_low_hp_ally: 4.0
   heal_hp_threshold: 0.5
   # 미니언\
-  minion_kill: 1.0
-  minion_kill_near_nexus: 1.0  # 아군 넥서스 근처에서 적 미니언 처치
+  minion_kill: 2.1
+  minion_kill_near_nexus: 2.2  # 아군 넥서스 근처에서 적 미니언 처치
   minion_kill_nexus_radius: 3  # "근처" 판정 반경
   # 행동
   # 적/넥서스 접근 보상은 너무 크면 \"한 대 치고 이동\" 패턴이 강화되므로 완만하게 유지
-  approach_enemy_nexus: 0.35
-  approach_enemy: 0.4
-  approach_minion: 0.1
+  approach_enemy_nexus: 0.24
+  approach_enemy: 1.35
+  approach_minion: 0.38
   approach_teammate: 0.0
-  defend_nexus_bonus: 0.06    # 우리 넥서스/팀원 방어 기여 강화
-  defend_nexus_radius: 4
+  defend_nexus_bonus: 0.98    # 우리 넥서스/팀원 방어 기여 강화
+  defend_nexus_radius: 5
   stay_near_own_nexus_penalty: -0.08  # 적이 멀리 있을 때 자기 넥서스 근처에만 있으면 패널티
   stay_near_radius: 4                 # "넥서스 근처" 판정 반경
   stay_near_enemy_far: 6              # 적이 이 거리보다 멀면 "캠핑"으로 간주
   # 내 넥서스가 부실할 때 수비/복귀 유도
-  own_nexus_low_hp_threshold: 0.35
-  own_nexus_low_approach_enemy_nexus_mult: 0.15
-  own_nexus_low_far_penalty_per_tile: -0.04
+  own_nexus_low_hp_threshold: 0.6
+  own_nexus_low_approach_enemy_nexus_mult: 0.03
+  own_nexus_low_far_penalty_per_tile: -0.16
   idle_penalty: -0.12                 # 가만히 있는 것에 대한 패널티
   wall_bump: -0.1
   attack_miss: -0.2
   ranged_miss: -0.1
   invalid_action: -0.1
   oscillation_penalty: -0.05
-  flee_hp_threshold: 0.45     # 이 비율 미만이면 도주(거리 증가) 보상
-  flee_bonus: 1.4             # 저체력에서 후퇴 유인 강하게
-  flee_visible_mult: 1.9      # 시야에 적이 있을 때 후퇴 보상 추가 가중(치고 빠지기)
+  flee_hp_threshold: 0.52     # 이 비율 미만이면 도주(거리 증가) 보상
+  flee_bonus: 2.0             # 저체력에서 후퇴 유인 강하게
+  flee_visible_mult: 2.55     # 시야에 적이 있을 때 후퇴 보상 추가 가중(치고 빠지기)
   # 저체력인데 공격을 넣으면 패널티(무리한 맞교환 억제)
-  low_hp_combat_threshold: 0.35
-  low_hp_combat_penalty: -0.8
+  low_hp_combat_threshold: 0.38
+  low_hp_combat_penalty: -1.32
   # 시야 안에 적 에이전트가 있을 때: 적 쪽 유인↑, 적 넥서스만 향하는 유인↓
-  visible_enemy_approach_mult: 1.25
-  visible_enemy_nexus_mult: 0.42
-  adjacent_enemy_nexus_bonus: 0.25
+  visible_enemy_approach_mult: 2.0
+  visible_enemy_nexus_mult: 0.065
+  adjacent_enemy_nexus_bonus: 0.22
   # 넥서스가 매우 낮을 때(마무리)는 넥서스 타격을 더 유리하게 만든다.
   # - 넥서스 인접해도 다른 적을 때리느라 넥서스를 놓치는 패턴을 완화
   # - no_combat 타이머 리셋도 마무리 구간에서만 허용(치고만 다니는 부작용 방지)
   finisher_enemy_nexus_hp_threshold: 0.25
   finisher_nexus_damage_multiplier: 1.6
-  no_combat_penalty: -3.5
-  no_combat_threshold: 35 # 무전투 패널티를 더 빨리 적용해 교전 유도
+  no_combat_penalty: -10.4
+  no_combat_threshold: 16 # 살짝 완화: 과도한 no_combat 누적 완화
   survival_per_step: 0.03 # 살아남는 것에 소량 보상 (생존 우선도 약간 증가)
   combo_bonus: 0.0        # 연속 공격(콤보) 자체 보상 제거
   # 치고 빠지기(무한 교전 억제)
@@ -150,82 +150,82 @@ reward:
   
   # ==== 양방향 shaping ====
   # 연속으로 데미지를 넣는데도 거리(dist)가 늘지 않으면 패널티
-  hit_and_run_disengage_penalty: -0.7
+  hit_and_run_disengage_penalty: -0.95
   # 연속으로 공격 중 데미지를 넓히면 보상
-  hit_and_run_disengage_reward: 0.45
+  hit_and_run_disengage_reward: 0.58
   # 쿨다운(공격이나 힐을 계속 시도하는 것에 대한 패널티)
   attack_cooldown_penalty: -1.5   # 쿨다운 타이밍 실수 패널티 완화
   heal_cooldown_penalty: -2.0
   # 팀 관련
-  teammate_death: -14.0
+  teammate_death: -15.0
   # 시간 초과 시 넥서스 HP 비율 보상
   timeout_nexus_advantage: 10.0
   timeout_nexus_disadvantage: -8.0
 
 role_rewards:
   tank:
-    defend_nexus_bonus: 0.22
-    damage_dealt: 1.0
+    defend_nexus_bonus: 1.05
+    damage_dealt: 2.75
     combo_bonus: 0.0
-    flee_bonus: 1.8
-    flee_visible_mult: 2.0
+    flee_bonus: 2.45
+    flee_visible_mult: 2.75
     item_pickup: 14.0
-    approach_enemy_nexus: 1.0
-    approach_enemy: 1.5
-    nexus_damage: 14.0
-    approach_minion: 0.45
-    minion_kill: 2.0
-    minion_kill_near_nexus: 2.0
-    no_combat_penalty: -5.0
-    no_combat_threshold: 35
+    approach_enemy_nexus: 0.72
+    approach_enemy: 3.2
+    nexus_damage: 10.8
+    approach_minion: 0.6
+    minion_kill: 2.5
+    minion_kill_near_nexus: 2.5
+    no_combat_penalty: -9.9
+    no_combat_threshold: 19
     attack_cooldown_penalty: -0.4
     attack_miss: -0.05
-    visible_enemy_approach_mult: 1.8
-    visible_enemy_nexus_mult: 0.22
-    adjacent_enemy_nexus_bonus: 0.4
+    visible_enemy_approach_mult: 2.65
+    visible_enemy_nexus_mult: 0.065
+    adjacent_enemy_nexus_bonus: 0.34
   dealer:
-    nexus_damage: 16.0
-    approach_enemy_nexus: 1.45
-    approach_enemy: 1.6
-    damage_dealt: 1.15
+    nexus_damage: 12.0
+    approach_enemy_nexus: 0.92
+    approach_enemy: 3.5
+    damage_dealt: 3.5
     combo_bonus: 0.0
-    flee_bonus: 2.0
-    flee_visible_mult: 2.2
-    low_hp_combat_penalty: -1.05
-    visible_enemy_approach_mult: 1.55
-    visible_enemy_nexus_mult: 0.45
+    flee_bonus: 2.75
+    flee_visible_mult: 3.0
+    low_hp_combat_penalty: -1.4
+    visible_enemy_approach_mult: 2.55
+    visible_enemy_nexus_mult: 0.1
     ranged_miss: -0.02
     attack_miss: -0.05
     attack_cooldown_penalty: -0.3
-    no_combat_penalty: -3.8
-    no_combat_threshold: 36
-    approach_minion: 0.55
-    minion_kill: 2.0
-    minion_kill_near_nexus: 2.0
-    adjacent_enemy_nexus_bonus: 0.7
+    no_combat_penalty: -9.5
+    no_combat_threshold: 17
+    approach_minion: 0.72
+    minion_kill: 2.5
+    minion_kill_near_nexus: 2.5
+    adjacent_enemy_nexus_bonus: 0.58
   healer:
     heal_ally: 12.5
     heal_low_hp_ally: 16.0
     death: -8.0
-    low_hp_combat_penalty: -0.35
-    visible_enemy_approach_mult: 1.0
-    visible_enemy_nexus_mult: 1.0
-    flee_bonus: 1.4
-    flee_visible_mult: 1.5
+    low_hp_combat_penalty: -0.75
+    visible_enemy_approach_mult: 1.55
+    visible_enemy_nexus_mult: 0.3
+    flee_bonus: 1.95
+    flee_visible_mult: 2.35
     approach_teammate: 1.5
-    approach_minion: 0.05
-    minion_kill: 0.8
-    minion_kill_near_nexus: 0.8
-    nexus_damage: 2.4
-    no_combat_penalty: -10.0
-    no_combat_threshold: 45
+    approach_minion: 0.12
+    minion_kill: 1.4
+    minion_kill_near_nexus: 1.45
+    nexus_damage: 2.0
+    no_combat_penalty: -13.2
+    no_combat_threshold: 30
     adjacent_enemy_nexus_bonus: 0.35
     
 training:
   algorithm: "PPO"
   multi_policy: true
-  num_rounds: 7
-  steps_per_round: 50000
+  num_rounds: 5
+  steps_per_round: 30000
   total_timesteps: 30000000        
   learning_rate: 0.0001
   n_envs: 8                       
